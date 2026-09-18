@@ -278,9 +278,6 @@ async function main() {
   });
   app.get('/readyz', async (_req, res) => { try { await pool.query('SELECT 1'); res.json({ status: true }); } catch { res.status(503).json({ status: false }); } });
 
-  app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-
   app.use(`${API_PREFIX}/`, requireApiKey);
 
   app.get(`${API_PREFIX}/info`, (req, res) => sendResult(res, req, Date.now(), 200, { status: true, name: API_NAME, version: API_VERSION, plan: req.apiKey.plan, quota: req.usage }));
@@ -318,12 +315,37 @@ async function main() {
     } catch (err) { next(err); }
   });
 
-  app.get('/v1', (_req, res) => res.json({ status: true, name: API_NAME, version: API_VERSION, documentation: `${PUBLIC_BASE_URL || ''}/docs`, endpoints: [
-    { method:'GET', path:'/v1/info', auth:true },
-    { method:'GET', path:'/v1/search/youtube', auth:true },
-    { method:'GET', path:'/v1/tools/translate', auth:true },
-    { method:'POST', path:'/v1/ai/chat', auth:true }
-  ] }));
+  app.get('/api', (_req, res) => res.json({
+  status: true,
+  service: API_NAME,
+  version: API_VERSION,
+  message: 'ZUKO API is online ⚡',
+  health: '/healthz',
+  docs: '/docs',
+  api: '/v1',
+  endpoints: [
+    '/v1/info',
+    '/v1/search/youtube',
+    '/v1/tools/translate',
+    '/v1/ai/chat'
+  ]
+}));
+
+app.get('/api/', (_req, res) => res.json({
+  status: true,
+  service: API_NAME,
+  version: API_VERSION,
+  message: 'ZUKO API is online ⚡',
+  health: '/healthz',
+  docs: '/docs',
+  api: '/v1',
+  endpoints: [
+    '/v1/info',
+    '/v1/search/youtube',
+    '/v1/tools/translate',
+    '/v1/ai/chat'
+  ]
+}));
 
   app.get('/admin/api/endpoints', adminOnly, async (_req, res, next) => {
     try {
