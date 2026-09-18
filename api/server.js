@@ -278,6 +278,9 @@ async function main() {
   });
   app.get('/readyz', async (_req, res) => { try { await pool.query('SELECT 1'); res.json({ status: true }); } catch { res.status(503).json({ status: false }); } });
 
+  app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+
   app.use(`${API_PREFIX}/`, requireApiKey);
 
   app.get(`${API_PREFIX}/info`, (req, res) => sendResult(res, req, Date.now(), 200, { status: true, name: API_NAME, version: API_VERSION, plan: req.apiKey.plan, quota: req.usage }));
