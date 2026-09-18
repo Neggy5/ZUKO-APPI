@@ -1,0 +1,38 @@
+{
+  "name": "zuko-xmd-v2",
+  "version": "2.0.0",
+  "description": "ZUKO XMD V2 - WhatsApp bot paired via web UI or Telegram, built on Baileys",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js && node --check whatsapp.js && node --check config.js && find commands lib web -name \"*.js\" -print0 | xargs -0 -n1 node --check",
+    "test:identity": "node test/identity.test.js"
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.15.1",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@hapi/boom": "^10.0.1",
+    "axios": "^1.7.4",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "fluent-ffmpeg": "^2.1.2",
+    "form-data": "^4.0.0",
+    "stream": "0.0.2",
+    "google-tts-api": "^2.0.2",
+    "link-preview-js": "^3.0.5",
+    "long": "^5.2.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "node-webpmux": "^3.1.1",
+    "pino": "^9.4.0",
+    "protobufjs": "^7.2.5",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.33.5",
+    "wa-sticker-formatter": "^4.4.4",
+    "yt-search": "^2.10.3",
+    "@whiskeysockets/baileys": "7.0.0-rc14"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
