@@ -1,374 +1,41 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ZUKO — Developer Console</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#070b18"><title>ZUKO API — Developer Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{
-  --bg:#0b0f0d;
-  --panel:#111713;
-  --panel-raised:#141b16;
-  --line:#232c26;
-  --line-bright:#334036;
-  --text:#e9efe9;
-  --muted:#7e9088;
-  --dim:#4d5a53;
-  --signal:#ff9d42;
-  --signal-dim:#4d3620;
-  --ok:#5fd996;
-  --ok-dim:#1c3327;
-  --danger:#ff6b6b;
-  --danger-dim:#3a2020;
-  --mono:'IBM Plex Mono',ui-monospace,monospace;
-  --display:'Space Grotesk',system-ui,sans-serif;
-}
-*{box-sizing:border-box}
-body{
-  margin:0;
-  background:
-    linear-gradient(180deg,#0d1310 0,var(--bg) 260px),
-    repeating-linear-gradient(180deg,transparent 0 39px,#ffffff05 39px 40px);
-  color:var(--text);
-  font:14px/1.5 var(--mono);
-  min-height:100vh;
-}
-a{color:inherit}
-.hidden{display:none !important}
-
-/* ---------- shell / terminal chrome ---------- */
-.shell{max-width:960px;margin:0 auto;padding:28px 20px 60px}
-.titlebar{
-  display:flex;align-items:center;gap:10px;
-  padding:10px 14px;border:1px solid var(--line);border-bottom:0;
-  border-radius:8px 8px 0 0;background:var(--panel-raised);
-  font-size:12px;color:var(--dim);
-}
-.titlebar .dots{display:flex;gap:6px}
-.titlebar .dots span{width:8px;height:8px;border-radius:50%;background:var(--line-bright)}
-.titlebar .path{margin-left:6px}
-.titlebar .path b{color:var(--muted);font-weight:500}
-.frame{border:1px solid var(--line);border-radius:0 0 8px 8px;background:var(--panel);padding:32px}
-
-/* ---------- login ---------- */
-.login-frame{max-width:460px;margin:10vh auto 0}
-.login-frame .frame{padding:30px}
-.prompt-label{color:var(--signal);font-size:12px;letter-spacing:.02em}
-.login-frame h1{
-  font:600 26px/1.25 var(--display);margin:10px 0 4px;
-}
-.login-frame p.lead{color:var(--muted);margin:0 0 22px;font-size:13px}
-.field-row{margin-bottom:10px}
-.field-row label{display:block;font-size:11px;color:var(--dim);margin:0 0 5px}
-.field{
-  width:100%;background:#080b09;color:var(--text);
-  border:1px solid var(--line);border-radius:5px;
-  padding:10px 11px;font:13px var(--mono);
-}
-.field:focus{outline:none;border-color:var(--signal)}
-.btn-row{display:flex;gap:8px;margin-top:16px}
-.msg-line{margin-top:12px;font-size:12px;color:var(--danger);min-height:1em}
-
-/* ---------- buttons ---------- */
-button{font:inherit;cursor:pointer;border-radius:5px;padding:9px 14px;font-size:13px}
-.btn{background:transparent;color:var(--text);border:1px solid var(--line-bright)}
-.btn:hover{border-color:var(--muted)}
-.btn.primary{background:var(--signal);color:#1a0f00;border:1px solid var(--signal);font-weight:600}
-.btn.primary:hover{background:#ffb066}
-.btn.danger-outline{border-color:var(--danger-dim);color:var(--danger)}
-.btn.danger-outline:hover{border-color:var(--danger)}
-.btn.small{padding:6px 10px;font-size:12px}
-
-/* ---------- top bar (app) ---------- */
-.appbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}
-.brand{display:flex;align-items:center;gap:10px}
-.brand img{width:30px;height:30px;border-radius:6px;border:1px solid var(--line)}
-.brand b{font:600 15px var(--display)}
-.brand .sub{color:var(--dim);font-size:11px}
-
-/* ---------- status strip (replaces stat cards) ---------- */
-.statusline{
-  display:flex;border:1px solid var(--line);border-radius:8px;
-  margin-bottom:28px;overflow:hidden;background:var(--panel-raised);
-}
-.statusline .cell{flex:1;padding:16px 18px;border-left:1px solid var(--line)}
-.statusline .cell:first-child{border-left:0}
-.statusline .k{font-size:10.5px;color:var(--dim);text-transform:lowercase;letter-spacing:.03em}
-.statusline .v{font:600 20px var(--display);margin-top:4px;color:var(--text)}
-.statusline .v.accent{color:var(--signal)}
-
-/* ---------- headline block ---------- */
-.hero{margin-bottom:28px}
-.hero .tag{color:var(--signal);font-size:12px}
-.hero h1{font:600 28px/1.3 var(--display);margin:8px 0 6px;max-width:520px}
-.hero p{color:var(--muted);margin:0;font-size:13px;max-width:520px}
-
-/* ---------- sections ---------- */
-.section{
-  border:1px solid var(--line);border-left:2px solid var(--edge,var(--line-bright));
-  border-radius:6px;padding:22px 24px;margin-bottom:18px;background:var(--panel-raised);
-}
-.section.keys{--edge:var(--signal)}
-.section.billing{--edge:var(--ok)}
-.section.quickstart{--edge:var(--dim)}
-.section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
-.section-head h2{font:600 16px var(--display);margin:0 0 3px}
-.section-head .desc{color:var(--muted);font-size:12.5px}
-.pill{
-  border:1px solid var(--line-bright);background:var(--panel);
-  padding:4px 9px;border-radius:4px;font-size:11px;color:var(--muted);white-space:nowrap;
-}
-.pill.ok{border-color:var(--ok-dim);color:var(--ok)}
-
-/* ---------- key creation row ---------- */
-.create-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:14px}
-.newkey-box{
-  background:var(--ok-dim);border:1px solid #2c5a41;border-radius:6px;
-  padding:14px 16px;white-space:pre-wrap;font-size:12.5px;color:#c9f5da;margin-bottom:14px;
-}
-
-/* ---------- rows (keys / payments) ---------- */
-.row{
-  display:flex;justify-content:space-between;align-items:center;gap:14px;
-  padding:13px 0;border-bottom:1px solid var(--line);
-}
-.row:last-child{border-bottom:0}
-.row .name{font-weight:600;font-family:var(--display);font-size:13.5px}
-.row .keyval{color:var(--signal);font-size:12px;word-break:break-all;margin-top:3px}
-.row .meta{color:var(--muted);font-size:12px;margin-top:3px}
-.empty{color:var(--dim);font-size:12.5px;padding:6px 0}
-
-/* ---------- plans ---------- */
-.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:4px}
-.plan-card{border:1px solid var(--line);border-radius:6px;padding:16px;background:var(--panel)}
-.plan-card .pname{font-size:11px;color:var(--dim)}
-.plan-card .price{font:600 22px var(--display);margin:6px 0 2px}
-.plan-card .quota{color:var(--muted);font-size:12px;margin-bottom:12px}
-.plan-card button{width:100%}
-.pay-box{
-  background:var(--signal-dim);border:1px solid #6a4a26;border-radius:6px;
-  padding:14px 16px;white-space:pre-wrap;font-size:12.5px;color:#ffd9ac;margin-top:12px;
-}
-
-/* ---------- quickstart ---------- */
-.codeblock{
-  background:#080b09;border:1px solid var(--line);border-radius:6px;
-  padding:16px;font-size:12.5px;color:#b9c9c0;overflow:auto;margin-bottom:14px;
-}
-.codeblock .comment{color:var(--dim)}
-
-@media(max-width:680px){
-  .statusline{flex-direction:column}
-  .statusline .cell{border-left:0;border-top:1px solid var(--line)}
-  .statusline .cell:first-child{border-top:0}
-  .plans{grid-template-columns:1fr}
-  .create-row{grid-template-columns:1fr}
-  .frame{padding:22px 16px}
-}
-
-/* ZUKO NEON THEME */
-:root{--bg:#050816;--panel:#0b1226;--panel-raised:#101a35;--line:#1b2b50;--line-bright:#31518a;--text:#edf4ff;--muted:#8da4cf;--dim:#526b9b;--signal:#6d7cff;--signal-dim:#20275a;--ok:#35e0b0;--ok-dim:#123c3b;--danger:#ff668a;--danger-dim:#48233d}
-body{background:radial-gradient(circle at 15% 0%,#18235b 0,transparent 34%),linear-gradient(180deg,#070c20 0,var(--bg) 300px),repeating-linear-gradient(180deg,transparent 0 39px,#ffffff04 39px 40px)}
-.frame,.titlebar,.statusline,.section,.plan-card{box-shadow:0 12px 40px #0005}
-.btn.primary{background:linear-gradient(135deg,#5968ff,#8c5cff);color:#fff;border-color:#7781ff}.btn.primary:hover{background:linear-gradient(135deg,#7180ff,#a178ff)}
-.field:focus{border-color:#7c8bff;box-shadow:0 0 0 3px #6475ff22}
-.section{border-left-color:#5968ff}.section.keys{--edge:#7c6dff}.section.billing{--edge:#35e0b0}
-.pill.ok{border-color:#1e6e62;color:#55f0c2}
+:root{--bg:#070b18;--panel:#0d1427;--panel2:#111a32;--line:#1d2a49;--text:#edf3ff;--muted:#91a1c2;--blue:#4f8cff;--cyan:#22d3ee;--purple:#8b5cf6;--green:#34d399;--red:#fb7185;--amber:#fbbf24;--mono:'JetBrains Mono',monospace;--sans:Inter,system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;color:var(--text);font:14px/1.55 var(--sans);background:radial-gradient(circle at 10% 0,#142b5b 0,transparent 32%),radial-gradient(circle at 90% 10%,#25134f 0,transparent 30%),var(--bg);min-height:100vh}button,input{font:inherit}.hidden{display:none!important}.wrap{max-width:1120px;margin:auto;padding:24px 16px 60px}.chrome{border:1px solid var(--line);background:#0b1122cc;border-radius:18px 18px 0 0;padding:9px 14px;color:#7183a7;font:11px var(--mono);display:flex;gap:9px;align-items:center}.dots{display:flex;gap:5px}.dots i{width:7px;height:7px;border-radius:50%;background:#304263}.frame{border:1px solid var(--line);border-top:0;border-radius:0 0 18px 18px;background:#091022eF;padding:26px}.brand{display:flex;align-items:center;gap:12px}.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(145deg,#0d1732,#172554);border:1px solid #31539b;display:grid;place-items:center;box-shadow:0 0 30px #2563eb33}.logo svg{width:34px;height:34px}.brand b{font-size:18px;letter-spacing:.08em}.sub{color:#7183a7;font-size:11px;margin-top:1px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}.btn{border:1px solid #2c3d64;background:#0d1730;color:var(--text);border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600}.btn:hover{border-color:#5475b5;transform:translateY(-1px)}.primary{border:0;background:linear-gradient(135deg,var(--blue),var(--purple));box-shadow:0 8px 25px #4f8cff22}.danger{color:#ff9aaa;border-color:#5a2635}.hero{display:flex;justify-content:space-between;gap:20px;align-items:end;margin-bottom:24px}.eyebrow{color:#67b8ff;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.16em}.hero h1{font-size:38px;line-height:1.1;margin:8px 0 10px;letter-spacing:-.04em}.hero p{color:var(--muted);max-width:650px;margin:0}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}.stat,.section{border:1px solid var(--line);background:linear-gradient(145deg,#0e172c,#0a1123);border-radius:16px}.stat{padding:18px}.stat small,.label{color:#6f82a7;font:11px var(--mono);text-transform:uppercase;letter-spacing:.08em}.stat strong{display:block;font-size:25px;margin-top:5px}.section{padding:21px;margin:14px 0}.head{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:16px}.head h2{margin:0;font-size:17px}.desc{color:var(--muted);font-size:12px;margin-top:4px}.keyform{display:grid;grid-template-columns:1fr auto;gap:9px}.input{width:100%;background:#070d1c;border:1px solid #203153;color:var(--text);border-radius:10px;padding:12px 13px;outline:none}.input:focus{border-color:#4f8cff}.newkey{margin-top:12px;padding:15px;border:1px solid #236b55;background:#06251f;border-radius:12px;word-break:break-all;color:#8ef1c9;font:12px var(--mono);white-space:pre-wrap}.key{display:flex;justify-content:space-between;gap:15px;padding:14px 0;border-bottom:1px solid #17233d}.key:last-child{border-bottom:0}.keyname{font-weight:700}.meta{color:var(--muted);font-size:12px;margin-top:3px}.badge{display:inline-flex;padding:5px 9px;border-radius:999px;font:600 10px var(--mono);background:#152342;color:#a9bbdc;border:1px solid #25385e}.badge.green{background:#082a22;color:#70e9bd;border-color:#145e4c}.badge.amber{background:#30240a;color:#ffd56a;border-color:#665015}.badge.red{background:#32101b;color:#ff9bad;border-color:#69263a}.endpoint-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.endpoint{padding:14px;border:1px solid #1c2a48;border-radius:13px;background:#0b1428}.endpoint-top{display:flex;gap:8px;align-items:center}.method{font:700 9px var(--mono);padding:4px 7px;border-radius:6px;background:#092a27;color:#66e6c0}.method.post{background:#211546;color:#c7b5ff}.endpoint code{color:#7db5ff;font:600 12px var(--mono)}.endpoint h3{margin:8px 0 3px;font-size:14px}.endpoint p{margin:0;color:var(--muted);font-size:12px}.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.plan{border:1px solid #203153;border-radius:13px;padding:15px;background:#0a1327}.plan h3{margin:0;text-transform:uppercase;font-size:12px}.price{font-size:24px;font-weight:800;margin:5px 0}.quota{color:var(--muted);font-size:11px}.payment{border-left:3px solid var(--cyan);padding:13px 14px;background:#081d2b;border-radius:10px;margin-bottom:10px}.payment .ref{font:700 12px var(--mono);color:#8bc5ff}.footer{text-align:center;color:#56698e;font-size:11px;margin-top:25px}@media(max-width:760px){.frame{padding:18px}.hero{display:block}.hero h1{font-size:30px}.grid,.plans,.endpoint-grid{grid-template-columns:1fr}.keyform{grid-template-columns:1fr}.top{margin-bottom:22px}}
 </style>
-</head>
-<body>
-
-<!-- ===================== LOGIN ===================== -->
-<div id="login" class="shell login-frame">
-  <div class="titlebar"><div class="dots"><span></span><span></span><span></span></div><div class="path">zuko <b>/ auth</b></div></div>
-  <div class="frame">
-    <div class="prompt-label">$ zuko login</div>
-    <h1>Access your console.</h1>
-    <p class="lead">Create API keys, watch usage, ship faster with ZUKO.</p>
-
-    <div class="field-row"><label>name</label><input id="name" class="field" placeholder="Ada Lovelace"></div>
-    <div class="field-row"><label>email</label><input id="email" class="field" type="email" placeholder="you@domain.com"></div>
-    <div class="field-row"><label>password</label><input id="password" class="field" type="password" placeholder="8+ characters"></div>
-
-    <div class="btn-row">
-      <button class="btn primary" onclick="register()">Create account</button>
-      <button class="btn" onclick="loginEmail()">Sign in</button>
-    </div>
-    <div id="msg" class="msg-line"></div>
-  </div>
-</div>
-
-<!-- ===================== APP ===================== -->
-<div id="app" class="shell hidden">
-  <div class="titlebar"><div class="dots"><span></span><span></span><span></span></div><div class="path">zuko <b>/ console</b></div></div>
-  <div class="frame">
-
-    <div class="appbar">
-      <div class="brand">
-        <img src="/zuko-logo.png" alt="">
-        <div><b>ZUKO</b><div class="sub">developer console</div></div>
-      </div>
-      <button class="btn small" onclick="logout()">Sign out</button>
-    </div>
-
-    <div class="hero">
-      <div class="tag">workspace</div>
-      <h1 id="welcome">Your API workspace.</h1>
-      <p>Create keys and connect your applications to the ZUKO API.</p>
-    </div>
-
-    <div class="statusline">
-      <div class="cell"><div class="k">account</div><div class="v" id="account" style="font-size:14px">—</div></div>
-      <div class="cell"><div class="k">api keys</div><div class="v" id="keyCount">—</div></div>
-      <div class="cell"><div class="k">plan</div><div class="v accent" id="plan">FREE</div></div>
-    </div>
-
-    <!-- API KEYS -->
-    <section class="section keys">
-      <div class="section-head">
-        <div><h2>API keys</h2><div class="desc">Keep production keys private — they won't be shown again.</div></div>
-      </div>
-      <div class="create-row">
-        <input id="keyName" class="field" placeholder="Project name, e.g. support-bot">
-        <button class="btn primary" onclick="createKey()">+ Create key</button>
-      </div>
-      <div id="newKey" class="newkey-box hidden"></div>
-      <div id="keys"></div>
-    </section>
-
-    <!-- BILLING -->
-    <section class="section billing">
-      <div class="section-head">
-        <div><h2>Upgrade & billing</h2><div class="desc">Manual transfer payment — premium activates once an admin confirms it.</div></div>
-        <span class="pill ok" id="subStatus">FREE</span>
-      </div>
-      <div id="plans" class="plans"></div>
-      <div id="payInfo" class="pay-box hidden"></div>
-      <h2 style="font-size:13px;margin:20px 0 8px">Payment history</h2>
-      <div id="payments" class="empty">No payments yet.</div>
-    </section>
-
-    <!-- QUICK START -->
-    <section class="section quickstart">
-      <div class="section-head"><div><h2>Quick start</h2><div class="desc">Authenticate with your key on any request.</div></div></div>
-      <div class="codeblock"><span class="comment"># replace YOUR_API_KEY and the domain below</span>
-curl -H "Authorization: Bearer YOUR_API_KEY" \
-  https://YOUR-RAILWAY-DOMAIN/v1/tools/ping</div>
-      <a class="btn small" href="/docs" target="_blank">Open API docs ↗</a>
-    </section>
-
-  </div>
-</div>
-
+</head><body>
+<div class="wrap"><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span>zuko</span><b>/ developer console</b></div><div class="frame">
+<div id="login" style="max-width:440px;margin:7vh auto"><div class="section"><div class="brand" style="margin-bottom:18px"><div class="logo"><svg viewBox="0 0 48 48" fill="none"><path d="M11 12h26L15 36h22" stroke="url(#lg)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 36h8" stroke="#22d3ee" stroke-width="5" stroke-linecap="round"/><defs><linearGradient id="lg" x1="8" y1="8" x2="40" y2="40"><stop stop-color="#22d3ee"/><stop offset=".55" stop-color="#4f8cff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg></div><div><b>ZUKO API</b><div class="sub">Developer Console</div></div></div><div class="eyebrow">Secure developer access</div><h2 style="font-size:25px;margin:8px 0">Sign in to your workspace</h2><p class="desc">Create API keys, view endpoint names and manage your subscription.</p><input id="email" class="input" type="email" placeholder="you@example.com" style="margin-top:15px"><input id="password" class="input" type="password" placeholder="Password" style="margin-top:8px"><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" onclick="loginEmail()">Sign in</button><button class="btn" onclick="register()">Create account</button></div><div id="loginMsg" class="desc" style="color:var(--red);margin-top:10px"></div></div></div>
+<div id="app" class="hidden"><div class="top"><div class="brand"><div class="logo"><svg viewBox="0 0 48 48" fill="none"><path d="M11 12h26L15 36h22" stroke="url(#g)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 36h8" stroke="#22d3ee" stroke-width="5" stroke-linecap="round"/><defs><linearGradient id="g" x1="8" y1="8" x2="40" y2="40"><stop stop-color="#22d3ee"/><stop offset=".55" stop-color="#4f8cff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg></div><div><b>ZUKO API</b><div class="sub">Developer Console</div></div></div><button class="btn" onclick="logout()">Sign out</button></div>
+<div class="hero"><div><div class="eyebrow">Production workspace</div><h1 id="welcome">Welcome.</h1><p>Build, connect and monitor your applications with the ZUKO API. Your credentials stay private and your usage stays tied to your account.</p></div><a class="btn primary" href="/docs" target="_blank">API Documentation ↗</a></div>
+<div class="grid"><div class="stat"><small>Account</small><strong id="account">—</strong></div><div class="stat"><small>API Keys</small><strong id="keyCount">—</strong></div><div class="stat"><small>Current Plan</small><strong id="plan">FREE</strong></div></div>
+<section class="section"><div class="head"><div><h2>API Keys</h2><div class="desc">Create separate keys for your apps. The secret value is shown only once.</div></div></div><div class="keyform"><input id="keyName" class="input" placeholder="Project name, e.g. WhatsApp bot"><button class="btn primary" onclick="createKey()">＋ Create API key</button></div><div id="newKey" class="newkey hidden"></div><div id="keys"></div></section>
+<section class="section"><div class="head"><div><h2>Available API Endpoints</h2><div class="desc">Friendly endpoint names, methods and routes for your integration.</div></div><span class="badge green">LIVE CATALOG</span></div><div id="endpoints" class="endpoint-grid"></div></section>
+<section class="section"><div class="head"><div><h2>Upgrade & Billing</h2><div class="desc">Transfer the exact amount. Your request remains pending until admin review.</div></div><span id="subStatus" class="badge">FREE</span></div><div id="plans" class="plans"></div><div id="payInfo" class="payment hidden"></div><h3 style="font-size:13px;margin:22px 0 9px">Payment history</h3><div id="payments"><div class="desc">No payments yet.</div></div></section>
+<section class="section"><div class="head"><div><h2>Quick Start</h2><div class="desc">Example authenticated request.</div></div></div><pre style="overflow:auto;background:#060b17;border:1px solid #192844;padding:15px;border-radius:12px;color:#9bb2d8;font:12px var(--mono)">curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  https://web-production-41788.up.railway.app/v1/tools/ping</pre></section>
+<div class="footer">ZUKO API · secure developer infrastructure · keep your API keys private</div>
+</div></div></div>
 <script>
-const $=x=>document.getElementById(x);
-
-async function api(u,o={}){
-  const r=await fetch(u,{...o,headers:{'Content-Type':'application/json',...(o.headers||{})}});
-  const d=await r.json().catch(()=>({}));
-  if(!r.ok) throw Error(d.error||'Request failed');
-  return d;
-}
-
-function esc(x){
-  return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-}
-
-async function check(){
-  const d=await api('/auth/me');
-  if(d.authenticated){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); load(); }
-}
-
-async function register(){
-  try{
-    await api('/auth/register',{method:'POST',body:JSON.stringify({name:$('name').value,email:$('email').value,password:$('password').value})});
-    $('login').classList.add('hidden'); $('app').classList.remove('hidden'); load();
-  }catch(e){ $('msg').textContent=e.message; }
-}
-
-async function loginEmail(){
-  try{
-    await api('/auth/login',{method:'POST',body:JSON.stringify({email:$('email').value,password:$('password').value})});
-    $('login').classList.add('hidden'); $('app').classList.remove('hidden'); load();
-  }catch(e){ $('msg').textContent=e.message; }
-}
-
-async function load(){
-  try{
-    const d=await api('/dashboard/api/profile');
-    $('welcome').textContent='Welcome, '+(d.user.name||'Developer')+'.';
-    $('account').textContent=d.user.email||'—';
-    $('keyCount').textContent=d.keys.length;
-    $('plan').textContent=(d.subscription?.plan?.toUpperCase())||'FREE';
-    $('subStatus').textContent=d.subscription?('active · '+d.subscription.plan.toUpperCase()):'FREE';
-
-    $('keys').innerHTML = d.keys.map(k=>`
-      <div class="row">
-        <div>
-          <div class="name">${esc(k.name)}</div>
-          <div class="keyval">${esc(k.key_prefix)}···</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span class="pill">${esc(k.plan)}</span>
-          <button class="btn small danger-outline" onclick="revoke(${k.id})">Revoke</button>
-        </div>
-      </div>`).join('') || '<p class="empty">No keys yet — create one above to get started.</p>';
-
-    $('plans').innerHTML = Object.entries(d.plans).filter(([p])=>p!=='free').map(([p,x])=>`
-      <div class="plan-card">
-        <div class="pname">${p}</div>
-        <div class="price">₦${Number(x.price).toLocaleString()}</div>
-        <div class="quota">${Number(x.daily).toLocaleString()} requests / day</div>
-        <button class="btn primary" onclick="buy('${p}')">Request ${esc(p)}</button>
-      </div>`).join('');
-
-    const pay=await api('/dashboard/api/payments');
-    $('payments').innerHTML = pay.payments.map(x=>`
-      <div class="row">
-        <div>
-          <div class="name">${esc(x.reference)}</div>
-          <div class="meta">${esc(x.plan.toUpperCase())} · ₦${Number(x.amount).toLocaleString()} · ${esc(x.status)}</div>
-        </div>
-        <span class="pill">${new Date(x.submitted_at).toLocaleDateString()}</span>
-      </div>`).join('') || '<p class="empty">No payments yet.</p>';
-
-  }catch(e){ console.error(e); }
-}
-
-async function createKey(){
-  try{
-    const d=await api('/dashboard/api/keys',{method:'POST',body:JSON.stringify({name:$('keyName').value})});
-    $('newKey').classList.remove('hidden');
-    $('newKey').textContent='Copy this key now — it will not be shown again:\n'+d.key;
-    $('keyName').value='';
-    load();
-  }catch(e){ alert(e.message); }
-}
-
-async function buy(plan){
-  try{
-    const d=await api('/dashboard/api/payments',{method:'POST',body:JSON.stringify({plan})});
-    $('payInfo').classList.remove('hidden');
-    $('payInfo').textContent=`Payment reference: ${d.payment.reference}\n\nMethod: ${d.instructions.method}\nAccount: ${d.instructions.accountNumber}\nName: ${d.instructions.accountName}\nAmount: ₦${Number(d.payment.amount).toLocaleString()}\n\nTransfer the exact amount, then send the reference to the bot/admin as instructed. Your subscription stays pending until approval.`;
-    load();
-  }catch(e){ alert(e.message); }
-}
-
-async function revoke(id){
-  if(!confirm('Revoke this key?')) return;
-  await api('/dashboard/api/keys/'+id+'/revoke',{method:'POST'});
-  load();
-}
-
-async function logout(){
-  await api('/auth/logout',{method:'POST'});
-  location.reload();
-}
-
-check();
-</script>
-</body>
-</html>
+const $=id=>document.getElementById(id);const esc=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+async function api(u,o={}){const r=await fetch(u,{...o,headers:{'Content-Type':'application/json',...(o.headers||{})}});const d=await r.json().catch(()=>({}));if(r.status===401){location.reload();throw Error('Session expired.')}if(!r.ok)throw Error(d.error||'Request failed');return d}
+async function check(){try{const d=await api('/auth/me');if(d.authenticated){$('login').classList.add('hidden');$('app').classList.remove('hidden');load()}else{$('login').classList.remove('hidden');$('app').classList.add('hidden')}}catch(e){console.error(e)}}
+async function loginEmail(){try{await api('/auth/login',{method:'POST',body:JSON.stringify({email:$('email').value,password:$('password').value})});$('login').classList.add('hidden');$('app').classList.remove('hidden');load()}catch(e){$('loginMsg').textContent=e.message}}
+async function register(){try{const name=prompt('Your name:','Developer')||'Developer';await api('/auth/register',{method:'POST',body:JSON.stringify({name,email:$('email').value,password:$('password').value})});$('login').classList.add('hidden');$('app').classList.remove('hidden');load()}catch(e){$('loginMsg').textContent=e.message}}
+async function load(){try{const d=await api('/dashboard/api/profile');$('welcome').textContent='Welcome, '+(d.user.name||'Developer')+'.';$('account').textContent=d.user.email||'—';$('keyCount').textContent=d.keys.length;$('plan').textContent=d.subscription?.plan?.toUpperCase()||'FREE';$('subStatus').textContent=d.subscription?('ACTIVE · '+d.subscription.plan.toUpperCase()):'FREE';
+$('keys').innerHTML=d.keys.map(k=>`<div class="key"><div><div class="keyname">${esc(k.name)}</div><div class="meta">${esc(k.key_prefix)}··· · created ${new Date(k.created_at).toLocaleDateString()}</div></div><div><span class="badge ${k.active?'green':'red'}">${k.active?'ACTIVE':'REVOKED'}</span> ${k.active?`<button class="btn" style="padding:6px 9px;margin-left:5px" onclick="revoke(${k.id})">Revoke</button>`:''}</div></div>`).join('')||'<div class="desc">No keys yet.</div>';
+const ep=await api('/dashboard/api/endpoints');$('endpoints').innerHTML=ep.endpoints.map(x=>`<article class="endpoint"><div class="endpoint-top"><span class="method ${x.method==='POST'?'post':''}">${esc(x.method)}</span><code>${esc(x.path)}</code></div><h3>${esc(x.name)}</h3><p>${esc(x.description||'API endpoint')}</p></article>`).join('');
+$('plans').innerHTML=Object.entries(d.plans).filter(([p])=>p!=='free').map(([p,x])=>`<div class="plan"><h3>${esc(p)}</h3><div class="price">₦${Number(x.price).toLocaleString()}</div><div class="quota">${Number(x.daily).toLocaleString()} requests/day · 30 days</div><button class="btn primary" style="width:100%;margin-top:12px" onclick="buy('${p}')">Request upgrade</button></div>`).join('');
+const pay=await api('/dashboard/api/payments');$('payments').innerHTML=pay.payments.map(x=>`<div class="payment"><div class="ref">${esc(x.reference)}</div><div class="meta">${esc(x.plan.toUpperCase())} · ₦${Number(x.amount).toLocaleString()} · ${esc(x.status.toUpperCase())}</div>${x.note?`<div class="meta">Note: ${esc(x.note)}</div>`:''}</div>`).join('')||'<div class="desc">No payments yet.</div>';
+}catch(e){console.error(e)}}
+async function createKey(){try{const d=await api('/dashboard/api/keys',{method:'POST',body:JSON.stringify({name:$('keyName').value})});$('newKey').classList.remove('hidden');$('newKey').textContent='COPY THIS KEY NOW — it will not be shown again:\n\n'+d.key;$('keyName').value='';load()}catch(e){alert(e.message)}}
+async function buy(plan){const note=prompt('Optional payment note (e.g. sender name or transfer reference):','');if(note===null)return;try{const d=await api('/dashboard/api/payments',{method:'POST',body:JSON.stringify({plan,note})});$('payInfo').classList.remove('hidden');$('payInfo').innerHTML=`<b>Upgrade request submitted</b><div style="margin-top:7px">Reference: <strong>${esc(d.payment.reference)}</strong><br>Method: ${esc(d.instructions.method)}<br>Account: ${esc(d.instructions.accountNumber)}<br>Name: ${esc(d.instructions.accountName)}<br>Amount: ₦${Number(d.payment.amount).toLocaleString()}<br><br>Transfer the exact amount and keep your reference. An admin will review the request.</div>`;load()}catch(e){alert(e.message)}}
+async function revoke(id){if(!confirm('Revoke this API key?'))return;try{await api('/dashboard/api/keys/'+id+'/revoke',{method:'POST'});load()}catch(e){alert(e.message)}}
+async function logout(){await api('/auth/logout',{method:'POST'});location.reload()}check();
+</script></body></html>
