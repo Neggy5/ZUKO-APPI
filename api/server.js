@@ -26,6 +26,9 @@ const API_KEY_WINDOW_MS = Number(process.env.API_KEY_WINDOW_MS || 60_000);
 const API_KEY_LIMIT = Number(process.env.API_KEY_LIMIT || 120);
 const MAX_CONCURRENT_PER_KEY = Number(process.env.MAX_CONCURRENT_PER_KEY || 8);
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 256 * 1024);
+const DOWNLOADER_API_BASE = String(process.env.DOWNLOADER_API_BASE || '').replace(/\/$/, '');
+const DOWNLOADER_API_KEY = String(process.env.DOWNLOADER_API_KEY || '');
+const DOWNLOADER_TIMEOUT_MS = Number(process.env.DOWNLOADER_TIMEOUT_MS || 45000);
 const SCRAPER_BLOCK_THRESHOLD = Number(process.env.SCRAPER_BLOCK_THRESHOLD || 40);
 const suspiciousHits = new Map();
 const activeByKey = new Map();
@@ -254,6 +257,24 @@ async function aiChat(prompt, model = 'default') {
   return { text, model: response.data?.model || model };
 }
 
+function validHttpUrl(value) {
+  try {
+    const u = new URL(String(value || '').trim());
+    if (!['http:', 'https:'].includes(u.protocol)) return null;
+    return u.toString();
+  } catch { return null; }
+}
+
+async function downloaderLookup(url, type = 'auto') {
+  if (!DOWNLOADER_API_BASE) throw new Error('Downloader provider is not configured. Set DOWNLOADER_API_BASE.');
+  const response = await axios.get(DOWNLOADER_API_BASE, {
+    params: { url, type },
+    timeout: DOWNLOADER_TIMEOUT_MS,
+    headers: DOWNLOADER_API_KEY ? { Authorization: `Bearer ${DOWNLOADER_API_KEY}`, 'X-API-Key': DOWNLOADER_API_KEY } : {}
+  });
+  return response.data;
+}
+
 class KeyRateLimiter {
   constructor(windowMs, limit) { this.windowMs = windowMs; this.limit = limit; this.map = new Map(); }
   async check(id) { const now = Date.now(); const x = this.map.get(id) || { start: now, count: 0 }; if (now - x.start >= this.windowMs) { x.start = now; x.count = 0; } x.count++; this.map.set(id, x); return x.count <= this.limit; }
@@ -261,6 +282,9 @@ class KeyRateLimiter {
 
 async function main() {
   await migrate();
+  await pool.query(`INSERT INTO endpoint_configs(name,method,path,category,description) VALUES
+    ('Downloader','GET','/v1/download','Downloaders','Resolve a media URL through the configured downloader provider.')
+    ON CONFLICT(path) DO NOTHING`);
   const app = express();
   app.locals.keyLimiter = new KeyRateLimiter(API_KEY_WINDOW_MS, API_KEY_LIMIT);
   app.set('trust proxy', 1);
@@ -291,6 +315,25 @@ async function main() {
       const videos = (result.videos || []).slice(0, Math.min(Number(req.query.limit) || 10, 20)).map(v => ({ title: v.title, url: v.url, videoId: v.videoId, duration: v.timestamp, seconds: v.seconds, thumbnail: v.thumbnail, views: v.views, author: v.author?.name || null }));
       return sendResult(res, req, started, 200, { status: true, query: q, results: videos });
     } catch (err) { next(err); }
+  });
+
+  app.get(`${API_PREFIX}/download`, async (req, res, next) => {
+    const started = Date.now();
+    try {
+      const url = validHttpUrl(req.query.url);
+      const type = cleanString(req.query.type || 'auto', 20).toLowerCase();
+      if (!url) return sendResult(res, req, started, 400, { status: false, error: 'A valid http(s) url is required.' });
+      if (!['auto', 'video', 'audio', 'image', 'document'].includes(type)) {
+        return sendResult(res, req, started, 400, { status: false, error: 'type must be auto, video, audio, image, or document.' });
+      }
+      const result = await downloaderLookup(url, type);
+      return sendResult(res, req, started, 200, { status: true, source: url, type, result });
+    } catch (err) {
+      if (err.response) {
+        return sendResult(res, req, started, 502, { status: false, error: 'Downloader provider request failed.', providerStatus: err.response.status });
+      }
+      next(err);
+    }
   });
 
   app.get(`${API_PREFIX}/tools/translate`, async (req, res, next) => {
@@ -326,6 +369,7 @@ async function main() {
   endpoints: [
     '/v1/info',
     '/v1/search/youtube',
+    '/v1/download',
     '/v1/tools/translate',
     '/v1/ai/chat'
   ]
@@ -342,6 +386,7 @@ app.get('/api/', (_req, res) => res.json({
   endpoints: [
     '/v1/info',
     '/v1/search/youtube',
+    '/v1/download',
     '/v1/tools/translate',
     '/v1/ai/chat'
   ]

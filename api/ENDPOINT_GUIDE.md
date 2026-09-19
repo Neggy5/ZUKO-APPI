@@ -109,3 +109,26 @@ api/
 ```
 
 This lets you replace an upstream provider without changing the public ZUKO endpoint contract.
+
+## Downloader endpoint
+
+`GET /v1/download?url=<encoded-url>&type=auto`
+
+Required header: `Authorization: Bearer <API_KEY>` (or `x-api-key`).
+
+Supported `type` values: `auto`, `video`, `audio`, `image`, and `document`.
+
+The endpoint delegates resolution to the provider configured with:
+
+- `DOWNLOADER_API_BASE` — provider endpoint accepting `url` and `type` query parameters.
+- `DOWNLOADER_API_KEY` — optional provider credential.
+- `DOWNLOADER_TIMEOUT_MS` — provider timeout, default `45000`.
+
+The API intentionally does not scrape platforms directly. Configure a provider you are authorized to use, then test:
+
+```bash
+curl -G "https://YOUR-DOMAIN/v1/download" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  --data-urlencode "url=https://example.com/media" \
+  --data-urlencode "type=auto"
+```
