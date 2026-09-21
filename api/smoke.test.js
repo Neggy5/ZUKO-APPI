@@ -11,6 +11,10 @@ const loader = fs.readFileSync(path.join(API_DIR, 'endpoint-loader.js'), 'utf8')
 const checks = [
   ['email registration', "app.post('/auth/register'"],
   ['email login', "app.post('/auth/login'"],
+  ['email verification page', "app.get('/auth/verify'"],
+  ['email verification submit', "app.post('/auth/verify'"],
+  ['resend verification', "app.post('/auth/resend-verification'"],
+  ['Resend mailer', "new Resend(RESEND_API_KEY)"],
   ['session check', "app.get('/auth/me'"],
   ['logout', "app.post('/auth/logout'"],
   ['endpoint loader import', "require('./endpoint-loader')"],
