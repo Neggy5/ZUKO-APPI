@@ -397,3 +397,8 @@ This build uses a hybrid WhatsApp identity model. Chat routing stays on `remoteJ
 The upgrade also centralizes identity normalization in `lib/identity.js`, updates owner/admin/premium routing to use it, normalizes game-state chat keys, and removes the hardcoded Gemini API key from source. Configure `GEMINI_API_KEY` through the environment instead.
 
 Run `npm run test:identity` after installing dependencies to verify the identity layer.
+
+
+## First-party endpoint architecture
+
+ZUKO v2 no longer requires an upstream provider layer for its built-in endpoints. New endpoints live under `api/endpoints/<category>/` and are automatically discovered at startup. See `api/ENDPOINT_GUIDE.md` for the exact workflow.

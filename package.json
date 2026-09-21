@@ -1,12 +1,13 @@
 {
   "name": "zuko-xmd-v2",
-  "version": "2.0.0",
-  "description": "ZUKO XMD V2 - WhatsApp bot paired via web UI or Telegram, built on Baileys",
+  "version": "5.1.0",
+  "description": "ZUKO first-party API platform with command-style modular endpoints, yt-dlp social downloads, and configurable AI chat",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "check": "node --check index.js && node --check whatsapp.js && node --check config.js && find commands lib web -name \"*.js\" -print0 | xargs -0 -n1 node --check",
-    "test:identity": "node test/identity.test.js"
+    "test:identity": "node test/identity.test.js",
+    "test:api": "npm --prefix api run smoke"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.15.1",
