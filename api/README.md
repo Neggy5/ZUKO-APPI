@@ -49,3 +49,24 @@ Change these values in `server.js` and redeploy if you need different quotas.
 - `POST /v1/ai/chat`
 
 The AI endpoint expects an OpenAI-compatible `/chat/completions` endpoint. This keeps provider-specific credentials outside the public API contract.
+
+## Social media downloads
+
+ZUKO includes a first-party social downloader powered by the locally installed yt-dlp engine. It does not proxy David Cyril, OmegaTech, or another downloader API.
+
+Supported convenience routes:
+
+- `GET /v1/download/social?url=...&type=video`
+- `GET /v1/download/social?url=...&type=audio`
+- `GET /v1/download/social?url=...&type=info`
+- `GET /v1/download/tiktok?url=...`
+- `GET /v1/download/instagram?url=...`
+- `GET /v1/download/facebook?url=...`
+- `GET /v1/download/twitter?url=...`
+- `GET /v1/download/pinterest?url=...`
+
+Only public URLs are intended. Platform support can change as websites change their extraction mechanisms; yt-dlp's own supported-sites documentation notes that listed sites are not guaranteed to work forever. See the official supported-sites list for the current extractor catalog.
+
+
+## Impersonation
+The API installs `curl-cffi` and runs yt-dlp with a configurable browser impersonation target. The default is `Chrome-131:Android-14`. Set `YTDLP_IMPERSONATE` to another target supported by the installed yt-dlp build. There is no downloader fallback.

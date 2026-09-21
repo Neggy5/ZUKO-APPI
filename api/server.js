@@ -10,6 +10,7 @@ const axios = require('axios');
 const { Pool } = require('pg');
 const yts = require('yt-search');
 const bcrypt = require('bcryptjs');
+const { mountEndpoints } = require('./endpoint-loader');
 
 const PORT = Number(process.env.PORT || 3000);
 const API_PREFIX = '/v1';
@@ -61,13 +62,8 @@ const PAYMENT_METHOD = String(process.env.PREMIUM_PAY_METHOD || 'Opay');
 const PAYMENT_ACCOUNT_NUMBER = String(process.env.PREMIUM_PAY_NUMBER || '');
 const PAYMENT_ACCOUNT_NAME = String(process.env.PREMIUM_PAY_NAME || '');
 const BILLING_ADMIN_NUMBER = String(process.env.BILLING_ADMIN_NUMBER || '');
-const BUILTIN_ENDPOINTS = Object.freeze([
-  { name:'API Information', method:'GET', path:'/v1/info', category:'Core', description:'Returns API name, version, plan and quota information.' },
-  { name:'YouTube Search', method:'GET', path:'/v1/search/youtube', category:'Search', description:'Search YouTube videos and return structured results.' },
-  { name:'Text Translation', method:'GET', path:'/v1/tools/translate', category:'Tools', description:'Translate text between supported languages.' },
-  { name:'AI Chat', method:'POST', path:'/v1/ai/chat', category:'AI', description:'Send a prompt to the configured AI provider.' },
-  { name:'API Ping', method:'GET', path:'/v1/tools/ping', category:'Core', description:'Authenticated health check for API clients.' }
-]);
+const BUILTIN_ENDPOINTS = Object.freeze([]);
+let DYNAMIC_ENDPOINTS = [];
 async function getUserSubscription(userId){ const r=await pool.query(`SELECT * FROM subscriptions WHERE user_id=$1 AND status='active' AND expires_at > NOW() ORDER BY expires_at DESC LIMIT 1`,[userId]); return r.rows[0]||null; }
 async function effectivePlanForUser(userId){ const sub=await getUserSubscription(userId); return sub?.plan || 'free'; }
 function paymentReference(){ return 'ZUKO-' + crypto.randomBytes(4).toString('hex').toUpperCase(); }
@@ -236,31 +232,6 @@ function sendResult(res, req, started, status, payload) {
   return res.status(status).json(payload);
 }
 
-async function translate(text, target = 'en', source = 'auto') {
-  const q = cleanString(text, 5000);
-  if (!q) throw new Error('text is required');
-  const response = await axios.get('https://translate.googleapis.com/translate_a/single', {
-    params: { client: 'gtx', sl: source || 'auto', tl: target, dt: 't', q }, timeout: 10000
-  });
-  const chunks = Array.isArray(response.data?.[0]) ? response.data[0] : [];
-  const translated = chunks.map(x => x?.[0]).filter(Boolean).join('');
-  if (!translated) throw new Error('Translation provider returned no result.');
-  return translated;
-}
-
-async function aiChat(prompt, model = 'default') {
-  const base = String(process.env.AI_API_BASE || '').replace(/\/$/, '');
-  const key = String(process.env.AI_API_KEY || '');
-  if (!base || !key) throw new Error('AI provider is not configured on this API server.');
-  const response = await axios.post(`${base}/chat/completions`, {
-    model: model === 'default' ? (process.env.AI_DEFAULT_MODEL || 'default') : model,
-    messages: [{ role: 'user', content: cleanString(prompt, 12000) }]
-  }, { timeout: 45000, headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } });
-  const text = response.data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('AI provider returned no text.');
-  return { text, model: response.data?.model || model };
-}
-
 class KeyRateLimiter {
   constructor(windowMs, limit) { this.windowMs = windowMs; this.limit = limit; this.map = new Map(); }
   async check(id) { const now = Date.now(); const x = this.map.get(id) || { start: now, count: 0 }; if (now - x.start >= this.windowMs) { x.start = now; x.count = 0; } x.count++; this.map.set(id, x); return x.count <= this.limit; }
@@ -289,38 +260,7 @@ async function main() {
 
   app.get(`${API_PREFIX}/info`, (req, res) => sendResult(res, req, Date.now(), 200, { status: true, name: API_NAME, version: API_VERSION, plan: req.apiKey.plan, quota: req.usage }));
 
-  app.get(`${API_PREFIX}/search/youtube`, async (req, res, next) => {
-    const started = Date.now();
-    try {
-      const q = cleanString(req.query.q, 300);
-      if (!q) return sendResult(res, req, started, 400, { status: false, error: 'q is required' });
-      const result = await yts(q);
-      const videos = (result.videos || []).slice(0, Math.min(Number(req.query.limit) || 10, 20)).map(v => ({ title: v.title, url: v.url, videoId: v.videoId, duration: v.timestamp, seconds: v.seconds, thumbnail: v.thumbnail, views: v.views, author: v.author?.name || null }));
-      return sendResult(res, req, started, 200, { status: true, query: q, results: videos });
-    } catch (err) { next(err); }
-  });
-
-  app.get(`${API_PREFIX}/tools/translate`, async (req, res, next) => {
-    const started = Date.now();
-    try {
-      const text = cleanString(req.query.text, 5000);
-      const target = cleanString(req.query.target || 'en', 20);
-      const source = cleanString(req.query.source || 'auto', 20);
-      if (!text) return sendResult(res, req, started, 400, { status: false, error: 'text is required' });
-      const result = await translate(text, target, source);
-      return sendResult(res, req, started, 200, { status: true, source, target, result });
-    } catch (err) { next(err); }
-  });
-
-  app.post(`${API_PREFIX}/ai/chat`, async (req, res, next) => {
-    const started = Date.now();
-    try {
-      const prompt = cleanString(req.body?.prompt, 12000);
-      if (!prompt) return sendResult(res, req, started, 400, { status: false, error: 'prompt is required' });
-      const result = await aiChat(prompt, cleanString(req.body?.model || 'default', 100));
-      return sendResult(res, req, started, 200, { status: true, result });
-    } catch (err) { next(err); }
-  });
+  DYNAMIC_ENDPOINTS = mountEndpoints(app, { API_PREFIX, cleanString, sendResult, API_NAME, nowIso });
 
   app.get('/api', (_req, res) => res.json({
   status: true,
@@ -332,9 +272,7 @@ async function main() {
   api: '/v1',
   endpoints: [
     '/v1/info',
-    '/v1/search/youtube',
-    '/v1/tools/translate',
-    '/v1/ai/chat'
+    ...DYNAMIC_ENDPOINTS.map(x => x.path)
   ]
 }));
 
@@ -348,9 +286,7 @@ app.get('/api/', (_req, res) => res.json({
   api: '/v1',
   endpoints: [
     '/v1/info',
-    '/v1/search/youtube',
-    '/v1/tools/translate',
-    '/v1/ai/chat'
+    ...DYNAMIC_ENDPOINTS.map(x => x.path)
   ]
 }));
 
@@ -419,13 +355,12 @@ app.get('/api/', (_req, res) => res.json({
 
   app.post('/auth/logout', async (req,res,next)=>{ try{ const raw=req.cookies?.zuko_session; if(raw) await pool.query('DELETE FROM user_sessions WHERE token_hash=$1',[sha256(raw)]); res.setHeader('Set-Cookie','zuko_session=; HttpOnly; SameSite=Lax; Max-Age=0; Path=/'); res.json({status:true}); }catch(e){next(e);} });
   app.get('/api/ping', (_req,res)=>res.json({status:true,message:'ZUKO API is alive ⚡',time:nowIso()}));
-  app.get(`${API_PREFIX}/tools/ping`, (req,res)=>sendResult(res,req,Date.now(),200,{status:true,message:'pong',service:API_NAME,time:nowIso(),plan:req.apiKey.plan}));
   app.get('/dashboard/api/profile', userOnly, async (req,res,next)=>{try{const keys=await pool.query('SELECT id,name,key_prefix,plan,active,created_at,last_used_at FROM api_keys WHERE owner_user_id=$1 ORDER BY id DESC',[req.user.id]);const subscription=await getUserSubscription(req.user.id);res.json({status:true,user:{id:req.user.id,email:req.user.email,name:req.user.name,avatar:req.user.avatar,emailVerified:req.user.email_verified},subscription:subscription?{plan:subscription.plan,status:subscription.status,expiresAt:subscription.expires_at}:null,keys:keys.rows,plans:PLANS,payment:{method:PAYMENT_METHOD,accountNumber:PAYMENT_ACCOUNT_NUMBER,accountName:PAYMENT_ACCOUNT_NAME}});}catch(e){next(e);}});
   app.get('/dashboard/api/payments', userOnly, async (req,res,next)=>{try{const r=await pool.query('SELECT reference,plan,amount,currency,status,note,submitted_at,reviewed_at,rejection_reason FROM payments WHERE user_id=$1 ORDER BY id DESC LIMIT 50',[req.user.id]);res.json({status:true,payments:r.rows});}catch(e){next(e);}});
   app.get('/dashboard/api/endpoints', userOnly, async (req,res,next)=>{try{
     const r=await pool.query('SELECT name,method,path,category,description,enabled FROM endpoint_configs WHERE enabled=true ORDER BY category,name');
     const custom=r.rows;
-    const merged=[...BUILTIN_ENDPOINTS,...custom].filter((x,i,a)=>a.findIndex(y=>y.path===x.path && y.method===x.method)===i);
+    const merged=[...BUILTIN_ENDPOINTS,...DYNAMIC_ENDPOINTS,...custom].filter((x,i,a)=>a.findIndex(y=>y.path===x.path && y.method===x.method)===i);
     res.json({status:true,endpoints:merged});
   }catch(e){next(e);}});
   app.post('/dashboard/api/payments', userOnly, async (req,res,next)=>{try{const plan=cleanString(req.body?.plan||'',30).toLowerCase();const note=cleanString(req.body?.note||'',500);if(!PLANS[plan]||plan==='free')return res.status(400).json({status:false,error:'Choose a paid plan.'});const ref=paymentReference();const r=await pool.query(

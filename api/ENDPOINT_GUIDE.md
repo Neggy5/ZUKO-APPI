@@ -1,75 +1,217 @@
-# ZUKO API — Adding Endpoints
+# ZUKO API — Endpoint Plugin System
 
-The API is intentionally simple: add a route under `api/server.js`, keep provider-specific code in a helper/module, validate inputs, and return the same JSON shape.
+ZUKO endpoints now work like **bot commands/plugins**.
 
-## 1. Add a provider/helper
+You create one JavaScript file, export an endpoint object, and ZUKO automatically loads it. You do not need to edit `server.js` or a central route list.
 
-Create a module such as `api/providers/example.js`:
+## The simple workflow
+
+```text
+create file
+   ↓
+export endpoint
+   ↓
+write execute() logic
+   ↓
+npm run check
+   ↓
+restart ZUKO
+   ↓
+your endpoint is live
+```
+
+## Where to put endpoints
+
+```text
+api/
+└── endpoints/
+    ├── ai/
+    ├── download/
+    ├── media/
+    ├── search/
+    └── tools/
+```
+
+Create any category you want.
+
+Examples:
+
+```text
+api/endpoints/download/tiktok.js
+api/endpoints/ai/chat.js
+api/endpoints/media/convert.js
+api/endpoints/search/movie.js
+api/endpoints/tools/qr.js
+```
+
+## Fastest way: generate a plugin
+
+From the `api` folder:
+
+```bash
+npm run new:endpoint -- tools hello
+```
+
+This creates:
+
+```text
+api/endpoints/tools/hello.js
+```
+
+You can use any category and endpoint name:
+
+```bash
+npm run new:endpoint -- download tiktok
+npm run new:endpoint -- ai my-chat
+npm run new:endpoint -- search movie
+```
+
+Then edit the generated `execute()` function.
+
+## The endpoint format
+
+A minimal endpoint looks like this:
 
 ```js
 'use strict';
-const axios = require('axios');
 
-async function getExample(query) {
-  const { data } = await axios.get('https://example.com/api', {
-    params: { q: query },
-    timeout: 10000
-  });
-  return data;
+module.exports = {
+  name: 'Hello',
+  method: 'GET',
+  path: '/v1/tools/hello',
+  category: 'Tools',
+  description: 'Return a greeting.',
+
+  async execute({ query, body, params, req, ctx }) {
+    const name = ctx.cleanString(query.name || 'Developer', 80);
+
+    return {
+      status: true,
+      message: `Hello ${name} 👋`
+    };
+  }
+};
+```
+
+That's it.
+
+### Available values
+
+`execute()` receives:
+
+```js
+{
+  query,   // GET query parameters
+  body,    // parsed JSON body
+  params,  // Express route parameters
+  req,     // Express request
+  res,     // Express response
+  ctx      // ZUKO platform helpers
 }
-
-module.exports = { getExample };
 ```
 
-## 2. Import it in `api/server.js`
+Useful `ctx` helpers include:
 
 ```js
-const { getExample } = require('./providers/example');
+ctx.API_PREFIX
+ctx.API_NAME
+ctx.nowIso()
+ctx.cleanString(value, maxLength)
+ctx.sendResult(...)
 ```
 
-## 3. Add the route
+## GET example
+
+File:
+
+```text
+api/endpoints/tools/uuid.js
+```
 
 ```js
-app.get(`${API_PREFIX}/tools/example`, async (req, res, next) => {
-  const started = Date.now();
-  try {
-    const query = cleanString(req.query.q, 300);
-    if (!query) {
-      return sendResult(res, req, started, 400, {
-        status: false,
-        error: 'q is required'
-      });
+'use strict';
+
+const crypto = require('crypto');
+
+module.exports = {
+  name: 'UUID Generator',
+  method: 'GET',
+  path: '/v1/tools/uuid',
+  category: 'Tools',
+  description: 'Generate a UUID.',
+
+  async execute() {
+    return {
+      status: true,
+      uuid: crypto.randomUUID()
+    };
+  }
+};
+```
+
+The route automatically becomes:
+
+```text
+GET /v1/tools/uuid
+```
+
+## POST example
+
+```js
+'use strict';
+
+module.exports = {
+  name: 'Word Counter',
+  method: 'POST',
+  path: '/v1/tools/word-count',
+  category: 'Tools',
+  description: 'Count words in supplied text.',
+
+  async execute({ body }) {
+    const text = String(body.text || '').trim();
+
+    if (!text) {
+      return {
+        statusCode: 400,
+        data: {
+          status: false,
+          error: 'text is required'
+        }
+      };
     }
 
-    const result = await getExample(query);
-
-    return sendResult(res, req, started, 200, {
+    return {
       status: true,
-      result
-    });
-  } catch (err) {
-    next(err);
+      words: text.split(/\s+/).length
+    };
   }
-});
+};
 ```
 
-Because the route is below `app.use('/v1/', requireApiKey)`, it automatically gets API-key authentication, quota accounting, and request logging.
+## Route parameters
 
-## 4. Add it to the public endpoint catalog
-
-Update the `/v1` endpoint list in `api/server.js`:
+You can use normal Express parameters:
 
 ```js
-{ method: 'GET', path: '/v1/tools/example', auth: true }
+path: '/v1/users/:id'
 ```
 
-Also add it to the endpoint map in `api/public/admin.html` if you want it visible in the dashboard.
+Then:
 
-## 5. Test locally
+```js
+async execute({ params }) {
+  return {
+    status: true,
+    userId: params.id
+  };
+}
+```
+
+## Calling your endpoint
+
+After restarting:
 
 ```bash
-cd api
-npm install
 npm run check
 npm start
 ```
@@ -77,35 +219,158 @@ npm start
 Then:
 
 ```bash
-curl -H "Authorization: Bearer zuko_xxx" \
-  "http://localhost:3000/v1/tools/example?q=hello"
+curl -H "Authorization: Bearer YOUR_ZUKO_KEY"   "http://localhost:3000/v1/tools/hello?name=ZUKO"
 ```
 
-## Rules for stable endpoints
+## ZUKO automatically handles the platform layer
 
-- Keep secrets in environment variables.
-- Never expose upstream API keys to clients.
-- Validate and length-limit every input.
-- Give provider calls a timeout.
-- Return `{ status: true, ... }` for success and `{ status: false, error: ... }` for failures.
-- Use `sendResult()` so usage and request logs stay consistent.
-- Keep provider parsing outside the route when it becomes non-trivial.
-- Never make clients depend directly on an upstream provider's response schema.
+Every endpoint mounted under `/v1/` automatically passes through ZUKO's API-key middleware.
 
-## Recommended structure as the API grows
+That means you don't need to implement these inside every plugin:
+
+- API-key authentication
+- active-key checks
+- plan quota
+- per-key rate limiting
+- concurrency limits
+- usage counting
+- request logging
+- common API security headers
+
+Your plugin should concentrate on **what the endpoint actually does**.
+
+## How to return errors
+
+Use:
+
+```js
+return {
+  statusCode: 400,
+  data: {
+    status: false,
+    error: 'Something is wrong'
+  }
+};
+```
+
+For success:
+
+```js
+return {
+  status: true,
+  result: 'Everything worked'
+};
+```
+
+## Taking full control of the response
+
+For special cases such as streaming or a file response, you can use `res`:
+
+```js
+async execute({ res }) {
+  res.type('text/plain').send('ZUKO');
+}
+```
+
+When `res.headersSent` is true, the loader will not send another JSON response.
+
+## Important
+
+Do not put a third-party API call in every endpoint just to make the endpoint work.
+
+If you build a downloader, converter, search engine, AI feature, etc., keep the public contract as a **ZUKO endpoint** and put the actual implementation in your own code/modules.
+
+Libraries are fine. Your endpoint should not simply become a proxy whose main job is forwarding another service's API.
+
+## Legacy compatibility
+
+The older format:
+
+```js
+module.exports = {
+  definition,
+  register
+};
+```
+
+is still supported so existing ZUKO endpoint files don't suddenly break.
+
+For new endpoints, use the simpler command/plugin-style format shown above.
+
+## Endpoint discovery
+
+The loader scans:
 
 ```text
-api/
-├── server.js
-├── providers/
-│   ├── ai/
-│   ├── download/
-│   ├── search/
-│   └── tools/
-├── public/
-│   ├── admin.html
-│   └── docs.html
-└── ENDPOINT_GUIDE.md
+api/endpoints/
 ```
 
-This lets you replace an upstream provider without changing the public ZUKO endpoint contract.
+recursively.
+
+You can therefore have:
+
+```text
+endpoints/
+├── ai/
+│   ├── chat.js
+│   └── vision.js
+├── download/
+│   ├── youtube.js
+│   └── tiktok.js
+├── media/
+│   └── convert.js
+├── search/
+│   └── movie.js
+└── tools/
+    ├── hello.js
+    ├── hash.js
+    └── uuid.js
+```
+
+No central route registration is necessary.
+
+## Before deployment
+
+Run:
+
+```bash
+npm run check
+```
+
+Then:
+
+```bash
+npm start
+```
+
+For Railway, commit the new endpoint file and deploy normally.
+
+---
+
+### Think of it exactly like your bot
+
+Bot:
+
+```text
+commands/play.js
+        ↓
+export command
+        ↓
+bot loader
+        ↓
+.play
+```
+
+ZUKO:
+
+```text
+api/endpoints/download/tiktok.js
+        ↓
+export endpoint
+        ↓
+ZUKO endpoint loader
+        ↓
+GET /v1/download/tiktok
+```
+
+That is the intended development experience for ZUKO API v3.
