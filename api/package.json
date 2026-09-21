@@ -25,6 +25,7 @@
     "resend": "^6.3.0",
     "@aws-sdk/client-s3": "^3.862.0",
     "@aws-sdk/s3-request-presigner": "^3.862.0",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "qrcode": "^1.5.4"
   }
 }
