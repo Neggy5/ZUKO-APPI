@@ -547,8 +547,10 @@ res.status(201).json({
 
   app.post('/admin/api/login', (req, res) => {
     const supplied = Buffer.from(String(req.body?.password || '')); const expected = Buffer.from(ADMIN_PASSWORD); if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return res.status(401).json({ status: false, error: 'Invalid credentials.' });
-    res.setHeader('Set-Cookie', `zuko_admin=${encodeURIComponent(makeAdminToken())}; HttpOnly; SameSite=Strict; ${process.env.NODE_ENV === 'production' ? 'Secure; ' : ''}Max-Age=43200; Path=/`);
-    res.json({ status: true });
+    const token = makeAdminToken();
+    res.setHeader('Set-Cookie', `zuko_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; ${process.env.NODE_ENV === 'production' ? 'Secure; ' : ''}Max-Age=43200; Path=/`);
+    // Return the same short-lived token as a header-auth fallback. This avoids browser/proxy cookie issues on hosted deployments.
+    res.json({ status: true, token, expiresIn: 43200 });
   });
 
   function adminOnly(req, res, next) {
