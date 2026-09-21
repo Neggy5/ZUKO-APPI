@@ -1,6 +1,6 @@
 'use strict';
 
-const audio = require('./audio');
+const audio = require('./download/audio');
 
 module.exports = {
   name: 'YouTube MP3',

@@ -1,6 +1,6 @@
 'use strict';
 
-const video = require('./video');
+const video = require('./download/video');
 
 module.exports = {
   name: 'YouTube MP4',
