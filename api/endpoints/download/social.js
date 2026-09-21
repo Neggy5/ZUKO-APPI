@@ -37,6 +37,8 @@ async function execute({ query, res }) {
   res.setHeader('X-ZUKO-Download-Engine', 'yt-dlp');
   res.on('finish', job.cleanup);
   res.on('close', job.cleanup);
+  // Commit streaming headers before endpoint-loader can serialize null.
+  res.flushHeaders();
   const stream = fs.createReadStream(job.filepath);
   stream.on('error', job.cleanup);
   stream.pipe(res);
