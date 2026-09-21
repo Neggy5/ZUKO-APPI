@@ -9,6 +9,7 @@ const server = fs.readFileSync(path.join(API_DIR, 'server.js'), 'utf8');
 const loader = fs.readFileSync(path.join(API_DIR, 'endpoint-loader.js'), 'utf8');
 
 const checks = [
+  ['console root route', "app.get('/', sendConsole)"],
   ['email registration', "app.post('/auth/register'"],
   ['email login', "app.post('/auth/login'"],
   ['email verification page', "app.get('/auth/verify'"],
@@ -42,6 +43,11 @@ for (const file of ['public/dashboard.html', 'public/admin.html', 'public/docs.h
 const endpointLoader = require('./endpoint-loader');
 const files = endpointLoader.loadEndpointModules(path.join(API_DIR, 'endpoints'));
 if (!files.length) throw new Error('No endpoint modules discovered');
+
+for (const file of ['public/dashboard.html', 'public/admin.html']) {
+  const html = fs.readFileSync(path.join(API_DIR, file), 'utf8');
+  if (/\bprompt\s*\(/i.test(html)) throw new Error(`Browser prompt() remains in ${file}`);
+}
 
 const expected = [
   'endpoints/core/ping.js',

@@ -301,6 +301,15 @@ async function main() {
   app.use(express.json({ limit: MAX_BODY_BYTES }));
   app.use((req, _res, next) => { req.cookies = Object.fromEntries(String(req.headers.cookie || '').split(';').map(x => x.trim()).filter(Boolean).map(x => { const i=x.indexOf('='); return [i<0?x:x.slice(0,i), i<0?'':decodeURIComponent(x.slice(i+1))]; })); next(); });
   app.use(rateLimit({ windowMs: API_IP_WINDOW_MS, limit: API_IP_LIMIT, standardHeaders: 'draft-7', legacyHeaders: false, keyGenerator: req => clientIp(req), skip: req => req.path.startsWith('/healthz') || req.path.startsWith('/readyz') }));
+  // The console contains inline authentication JavaScript. Never let an old browser/proxy cache an obsolete login flow.
+  app.use((req, res, next) => {
+    if (req.path === '/' || req.path === '/login' || req.path === '/dashboard' || req.path.startsWith('/auth/')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+    next();
+  });
 
   app.get('/healthz', async (_req, res) => {
     try { await pool.query('SELECT 1'); res.json({ status: true, service: API_NAME, version: API_VERSION, time: nowIso() }); }
@@ -372,7 +381,15 @@ app.get('/api/', (_req, res) => res.json({
   });
 
 
-  app.get('/dashboard', (_req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
+  const sendConsole = (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+  };
+  app.get('/', sendConsole);
+  app.get('/login', sendConsole);
+  app.get('/dashboard', sendConsole);
 
   app.post('/auth/register', async (req,res,next)=>{
     if(!requireSameOrigin(req)) return res.status(403).json({status:false,error:'Invalid request origin.'});
