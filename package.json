@@ -1,6 +1,6 @@
 {
   "name": "zuko-xmd-v2",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "description": "ZUKO first-party API platform with command-style modular endpoints, yt-dlp social downloads, and configurable AI chat",
   "main": "index.js",
   "scripts": {
