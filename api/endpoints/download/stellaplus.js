@@ -1,83 +1,61 @@
 'use strict';
 
 /**
- * StellaPlus
- * Search: GET /download/stellaplus?q=query
- * Download: GET /download/stellaplus?url=https://...
+ * StellaPlus — ZUKO v1 endpoint
+ * GET /v1/download/stellaplus?q=search
+ * GET /v1/download/stellaplus?url=https://...
  */
 
 const { scrapeList, scrapePost, SITES } = require('../../lib/naijaSites');
 
 module.exports = {
-  path: '/download/stellaplus',
+  name: 'StellaPlus',
   method: 'GET',
-  description: 'StellaPlus search + direct MP4 extract',
-  query: {
-    q: 'Search query (optional)',
-    url: 'Post URL to extract video (optional)',
-    limit: 'Max search results (default 10)',
-  },
+  path: '/v1/download/stellaplus',
+  category: 'Download',
+  description: 'Search or download from StellaPlus',
 
-  async handler(req, res) {
-    try {
-      const q = (req.query.q || req.query.query || '').trim();
-      const url = (req.query.url || req.query.link || '').trim();
-      const limit = Math.min(parseInt(req.query.limit, 10) || 10, 20);
-      const siteKey = 'stellaplus';
-      const site = SITES[siteKey];
+  async execute({ query, ctx }) {
+    const siteKey = 'stellaplus';
+    const site = SITES[siteKey];
+    const q = ctx && ctx.cleanString
+      ? ctx.cleanString(query.q || query.query || '', 120)
+      : String(query.q || query.query || '').trim();
+    const url = ctx && ctx.cleanString
+      ? ctx.cleanString(query.url || query.link || '', 500)
+      : String(query.url || query.link || '').trim();
+    const limit = Math.min(parseInt(query.limit, 10) || 10, 20);
 
-      if (url) {
-        if (!url.includes(site.base.replace('https://', ''))) {
-          return res.status(400).json({
-            success: false,
-            error: 'URL must be from ' + site.base,
-          });
-        }
-        const post = await scrapePost(siteKey, url);
-        if (!post.video && !post.embed) {
-          return res.status(404).json({
-            success: false,
-            error: 'No direct video found on this page',
-            data: post,
-          });
-        }
-        return res.json({
-          success: true,
-          source: siteKey,
-          data: {
-            title: post.title,
-            url: post.url,
-            thumbnail: post.thumbnail,
-            video: post.video,
-            embed: post.embed,
-            download: post.video || post.embed,
-          },
-        });
+    if (url) {
+      if (!url.includes(site.base.replace('https://', ''))) {
+        return { status: false, error: 'URL must be from ' + site.base };
       }
-
-      if (q) {
-        const posts = await scrapeList(siteKey, site.search(q), limit);
-        return res.json({
-          success: true,
-          source: siteKey,
-          query: q,
-          count: posts.length,
-          results: posts,
-        });
+      const post = await scrapePost(siteKey, url);
+      if (!post.video && !post.embed) {
+        return { status: false, error: 'No direct video found', data: post };
       }
-
-      // default: latest from homepage
-      const posts = await scrapeList(siteKey, site.base + '/', limit);
-      return res.json({
-        success: true,
+      return {
+        status: true,
         source: siteKey,
-        query: null,
-        count: posts.length,
-        results: posts,
-      });
-    } catch (e) {
-      console.error('[stellaplus]', e);
-      return res.status(500).json({ success: false, error: e.message || 'Scrape failed' });
+        data: {
+          title: post.title,
+          url: post.url,
+          thumbnail: post.thumbnail,
+          video: post.video,
+          embed: post.embed,
+          download: post.video || post.embed,
+        },
+      };
     }
+
+    const listUrl = q ? site.search(q) : site.base + '/';
+    const results = await scrapeList(siteKey, listUrl, limit);
+    return {
+      status: true,
+      source: siteKey,
+      query: q || null,
+      count: results.length,
+      results,
+    };
   },
 };
