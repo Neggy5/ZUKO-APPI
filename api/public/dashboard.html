@@ -49,7 +49,7 @@ function showVerify(email,msg=''){ $('loginForm').classList.add('hidden'); $('ve
 function backToLogin(){ $('verifyPanel').classList.add('hidden'); $('loginForm').classList.remove('hidden'); $('verifyMsg').textContent=''; }
 async function loginEmail(){
   $('loginMsg').textContent='';
-  const email=$('email').value.normalize('NFKC').replace(/[\\u200B-\\u200D\\uFEFF]/g,'').replace(/[\\u00A0]/g,' ').trim().toLowerCase(), password=$('password').value;
+  const email=$('email').value.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/[\u00A0]/g,' ').trim().toLowerCase(), password=$('password').value;
   if(!email || !password){$('loginMsg').textContent='Enter your email and password.';return}
   try{await api('/auth/login',{method:'POST',body:JSON.stringify({email,password})});await check()}
   catch(e){
@@ -59,7 +59,7 @@ async function loginEmail(){
 }
 async function register(){
   $('loginMsg').textContent='';
-  const name=$('name').value.trim()||'Developer', email=$('email').value.normalize('NFKC').replace(/[\\u200B-\\u200D\\uFEFF]/g,'').replace(/[\\u00A0]/g,' ').trim().toLowerCase(), password=$('password').value;
+  const name=$('name').value.trim()||'Developer', email=$('email').value.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/[\u00A0]/g,' ').trim().toLowerCase(), password=$('password').value;
   if(!email){$('loginMsg').textContent='Enter a valid email address.';return}
   if(password.length<8){$('loginMsg').textContent='Password must be at least 8 characters.';return}
   try{
