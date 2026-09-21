@@ -72,11 +72,6 @@ async function inspect(rawUrl, mode = 'info') {
   const url = validateUrl(rawUrl); await assertPublicHost(url); await ensureTool();
   const args = ['--ignore-config', '--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download'];
   if (IMPERSONATE_TARGET) args.push('--impersonate', IMPERSONATE_TARGET);
-  // Snapchat CDN media URLs can expose a non-standard extension (e.g. .IRZXSOY).
-  // Scope yt-dlp's legacy unsafe-extension compatibility option to Snapchat only.
-  if (/^(?:www\.)?(?:snapchat\.com|t\.snapchat\.com)$/i.test(url.hostname)) {
-    args.push('--compat-options', 'allow-unsafe-ext');
-  }
   args.push('--', url.toString());
   const { stdout } = await run(args);
   let data; try { data = JSON.parse(stdout); } catch { throw new Error('yt-dlp returned invalid metadata.'); }
@@ -96,13 +91,8 @@ async function download(rawUrl, type, quality) {
   const token = crypto.randomBytes(8).toString('hex');
   const template = path.join(dir, `${token}.%(ext)s`);
   const format = type === 'audio' ? 'bestaudio/best' : (quality === 'audio' ? 'bestaudio/best' : (quality && /^\d{3,4}$/.test(String(quality)) ? `bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]/best[height<=${quality}]/best` : 'bestvideo+bestaudio/best'));
-  const args = ['--ignore-config', '--no-playlist', '--no-part', '--no-mtime', '--restrict-filenames', '--max-filesize', String(MAX_FILE_BYTES)];
+  const args = ['--ignore-config', '--no-playlist', '--no-part', '--no-continue', '--force-overwrites', '--no-mtime', '--restrict-filenames', '--max-filesize', String(MAX_FILE_BYTES)];
   if (IMPERSONATE_TARGET) args.push('--impersonate', IMPERSONATE_TARGET);
-  // Snapchat CDN media URLs can expose a non-standard extension (e.g. .IRZXSOY).
-  // Scope yt-dlp's legacy unsafe-extension compatibility option to Snapchat only.
-  if (/^(?:www\.)?(?:snapchat\.com|t\.snapchat\.com)$/i.test(url.hostname)) {
-    args.push('--compat-options', 'allow-unsafe-ext');
-  }
   args.push('-f', format, '-o', template);
   if (type === 'audio') args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
   else args.push('--merge-output-format', 'mp4');
