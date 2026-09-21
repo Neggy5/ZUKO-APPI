@@ -98,7 +98,34 @@ async function createSession(userId) { const raw=sessionToken(); await pool.quer
 async function currentUser(req) { const raw=req.cookies?.zuko_session; if(!raw)return null; const r=await pool.query('SELECT u.* FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW()',[sha256(raw)]); return r.rows[0]||null; }
 async function userOnly(req,res,next){ try { req.user=await currentUser(req); if(!req.user)return res.status(401).json({status:false,error:'Authentication required.'}); next(); } catch(e){next(e);} }
 
-function validEmail(value) { const email=cleanString(value,254).toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null; }
+function validEmail(value) {
+  // Normalize common copy/paste issues (NBSP, zero-width chars, Unicode width)
+  // before validating. Do not silently accept whitespace inside an address.
+  let email = String(value ?? '')
+    .normalize('NFKC')
+    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+    .replace(/[\\u00A0]/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  // Users sometimes paste "name @ gmail.com" or "name@ gmail.com".
+  // Only remove whitespace directly around separators; internal whitespace remains invalid.
+  email = email.replace(/\\s*@\\s*/g, '@').replace(/\\s*\\.\\s*/g, '.');
+
+  if (email.length < 6 || email.length > 254) return null;
+  if (/\\s/.test(email) || email.includes('..')) return null;
+
+  const at = email.lastIndexOf('@');
+  if (at <= 0 || at === email.length - 1) return null;
+
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+
+  if (local.length > 64 || !/^[a-z0-9.!#$%&'*+\\/=?^_`{|}~-]+$/i.test(local)) return null;
+  if (domain.length > 253 || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(domain)) return null;
+
+  return email;
+}
 function passwordValid(value) { const p=String(value||''); return p.length>=8 && p.length<=200; }
 function requireSameOrigin(req) { const origin=String(req.get('origin')||''); return !origin || !PUBLIC_BASE_URL || origin===PUBLIC_BASE_URL; }
 
@@ -298,7 +325,7 @@ async function main() {
   app.use((req, res, next) => { res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); if (req.path.startsWith('/v1/')) res.setHeader('Cache-Control','private, no-store'); next(); });
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors({ origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(x => x.trim()) : (PUBLIC_BASE_URL || true) }));
-  app.use(express.json({ limit: MAX_BODY_BYTES }));
+  app.use(express.json({ limit: MAX_BODY_BYTES })); app.use(express.urlencoded({ extended: false, limit: MAX_BODY_BYTES }));
   app.use((req, _res, next) => { req.cookies = Object.fromEntries(String(req.headers.cookie || '').split(';').map(x => x.trim()).filter(Boolean).map(x => { const i=x.indexOf('='); return [i<0?x:x.slice(0,i), i<0?'':decodeURIComponent(x.slice(i+1))]; })); next(); });
   app.use(rateLimit({ windowMs: API_IP_WINDOW_MS, limit: API_IP_LIMIT, standardHeaders: 'draft-7', legacyHeaders: false, keyGenerator: req => clientIp(req), skip: req => req.path.startsWith('/healthz') || req.path.startsWith('/readyz') }));
   // The console contains inline authentication JavaScript. Never let an old browser/proxy cache an obsolete login flow.
