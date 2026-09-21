@@ -1,0 +1,4 @@
+'use strict';
+const definition={name:'Text Analyzer',method:'POST',path:'/v1/tools/text',category:'Tools',description:'Analyze text length, words, lines and basic reading time locally.'};
+function register(app,{API_PREFIX,sendResult}){app.post(`${API_PREFIX}/tools/text`,(req,res)=>{const started=Date.now();const text=String(req.body?.text??'');if(!text||text.length>50000)return sendResult(res,req,started,400,{status:false,error:'text is required and must be <= 50,000 characters'});const words=text.trim()?text.trim().split(/\s+/).length:0;return sendResult(res,req,started,200,{status:true,characters:text.length,charactersNoSpaces:text.replace(/\s/g,'').length,words,lines:text.split(/\r?\n/).length,estimatedReadingMinutes:Math.max(1,Math.ceil(words/200))});});}
+module.exports={definition,register};
