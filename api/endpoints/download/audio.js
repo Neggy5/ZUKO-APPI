@@ -11,6 +11,8 @@ module.exports = {
     res.setHeader('Content-Length', String(job.size));
     res.setHeader('X-ZUKO-Max-File-Bytes', String(MAX_FILE_BYTES));
     res.on('finish', job.cleanup); res.on('close', job.cleanup);
+    // Flush the response headers before returning so endpoint-loader does not serialize null.
+    res.flushHeaders();
     const stream = require('fs').createReadStream(job.filepath); stream.on('error', job.cleanup); stream.pipe(res);
     return null;
   }
