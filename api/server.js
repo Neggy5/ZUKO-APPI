@@ -99,31 +99,25 @@ async function currentUser(req) { const raw=req.cookies?.zuko_session; if(!raw)r
 async function userOnly(req,res,next){ try { req.user=await currentUser(req); if(!req.user)return res.status(401).json({status:false,error:'Authentication required.'}); next(); } catch(e){next(e);} }
 
 function validEmail(value) {
-  // Normalize common copy/paste issues (NBSP, zero-width chars, Unicode width)
-  // before validating. Do not silently accept whitespace inside an address.
+  // Normalize common copy/paste issues before validating.
   let email = String(value ?? '')
     .normalize('NFKC')
-    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-    .replace(/[\\u00A0]/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[\u00A0]/g, ' ')
     .trim()
     .toLowerCase();
 
-  // Users sometimes paste "name @ gmail.com" or "name@ gmail.com".
-  // Only remove whitespace directly around separators; internal whitespace remains invalid.
-  email = email.replace(/\\s*@\\s*/g, '@').replace(/\\s*\\.\\s*/g, '.');
-
-  if (email.length < 6 || email.length > 254) return null;
-  if (/\\s/.test(email) || email.includes('..')) return null;
+  // Allow harmless spaces around @ and dots, but reject whitespace elsewhere.
+  email = email.replace(/\s*@\s*/g, '@').replace(/\s*\.\s*/g, '.');
+  if (email.length < 6 || email.length > 254 || /\s/.test(email) || email.includes('..')) return null;
 
   const at = email.lastIndexOf('@');
-  if (at <= 0 || at === email.length - 1) return null;
+  if (at <= 0 || at === email.length - 1 || email.indexOf('@') !== at) return null;
 
   const local = email.slice(0, at);
   const domain = email.slice(at + 1);
-
-  if (local.length > 64 || !/^[a-z0-9.!#$%&'*+\\/=?^_`{|}~-]+$/i.test(local)) return null;
-  if (domain.length > 253 || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(domain)) return null;
-
+  if (local.length > 64 || !/^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+$/.test(local)) return null;
+  if (domain.length > 253 || !/^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(domain)) return null;
   return email;
 }
 function passwordValid(value) { const p=String(value||''); return p.length>=8 && p.length<=200; }
