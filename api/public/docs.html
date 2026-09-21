@@ -1,7 +1,65 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZUKO API — Developer Docs</title><style>
-:root{--bg:#070a12;--panel:#0d1220;--line:#1c2638;--text:#eef4ff;--muted:#8d9ab1;--accent:#7c5cff;--accent2:#19d3ae}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% -10%,#25155b 0,transparent 35%),var(--bg);color:var(--text);font:15px Inter,system-ui,sans-serif}header{height:72px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 6%;position:sticky;top:0;background:#070a12e8;backdrop-filter:blur(14px);z-index:2}.logo{font-weight:900;font-size:22px}.logo span{color:var(--accent)}a{color:inherit;text-decoration:none}.wrap{max-width:1180px;margin:auto;padding:48px 24px}.hero{padding:55px 0}.eyebrow{color:var(--accent2);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:12px}.hero h1{font-size:clamp(38px,6vw,70px);line-height:.98;margin:14px 0}.hero p{color:var(--muted);max-width:700px;font-size:18px;line-height:1.6}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.card{background:linear-gradient(145deg,#101728,#0a0f1a);border:1px solid var(--line);border-radius:18px;padding:22px}.method{font-size:11px;font-weight:900;color:var(--accent2)}code{background:#080c14;border:1px solid #1b2434;border-radius:8px;padding:3px 7px;color:#cbd6ea}.route{font-size:17px;font-weight:800;margin:10px 0}.muted{color:var(--muted);line-height:1.55}.cta{display:inline-flex;background:var(--accent);padding:12px 18px;border-radius:11px;font-weight:800;margin-right:8px}.ghost{border:1px solid var(--line);padding:12px 18px;border-radius:11px;font-weight:800}.section{margin-top:55px}pre{overflow:auto;background:#050811;border:1px solid var(--line);border-radius:14px;padding:18px;color:#cdd7e8;line-height:1.55}</style></head><body><header><div class="logo">ZUKO<span>API</span></div><nav><a href="/dashboard">Console</a> &nbsp; <a href="/admin">Admin</a></nav></header><main class="wrap"><section class="hero"><div class="eyebrow">First-party developer platform</div><h1>Build with ZUKO.<br>Not through ZUKO.</h1><p>Your API, your routes, your implementation. Modular endpoints run on your own ZUKO server with API keys, quotas, rate limits, usage tracking and a developer console built in.</p><a class="cta" href="/dashboard">Open Console</a><a class="ghost" href="#endpoints">Explore endpoints</a></section><section id="endpoints" class="section"><h2>Built-in endpoints</h2><div id="grid" class="grid"></div></section><section class="section"><h2>Add an endpoint yourself</h2><p class="muted">Create one JavaScript module under <code>api/endpoints/</code>. ZUKO discovers it automatically at startup.</p><pre>api/endpoints/tools/hello.js
+:root{--bg:#070a12;--panel:#0d1220;--line:#1c2638;--text:#eef4ff;--muted:#8d9ab1;--accent:#7c5cff;--accent2:#19d3ae;--warn:#f59e0b}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% -10%,#25155b 0,transparent 35%),var(--bg);color:var(--text);font:15px Inter,system-ui,sans-serif}header{height:72px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 6%;position:sticky;top:0;background:#070a12e8;backdrop-filter:blur(14px);z-index:2}.logo{font-weight:900;font-size:22px}.logo span{color:var(--accent)}a{color:inherit;text-decoration:none}.wrap{max-width:1180px;margin:auto;padding:40px 24px 80px}.hero{padding:45px 0 35px}.eyebrow{color:var(--accent2);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:12px}.hero h1{font-size:clamp(38px,6vw,70px);line-height:.98;margin:14px 0}.hero p{color:var(--muted);max-width:760px;font-size:18px;line-height:1.6}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.card,.panel{background:linear-gradient(145deg,#101728,#0a0f1a);border:1px solid var(--line);border-radius:18px;padding:22px}.method{font-size:11px;font-weight:900;color:var(--accent2)}code{background:#080c14;border:1px solid #1b2434;border-radius:8px;padding:3px 7px;color:#cbd6ea}.route{font-size:17px;font-weight:800;margin:10px 0;word-break:break-all}.muted{color:var(--muted);line-height:1.55}.cta{display:inline-flex;background:var(--accent);padding:12px 18px;border-radius:11px;font-weight:800;margin-right:8px}.ghost{border:1px solid var(--line);padding:12px 18px;border-radius:11px;font-weight:800}.section{margin-top:45px}.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.step{padding:18px;border:1px solid var(--line);border-radius:14px;background:#0b101b}.step b{display:block;margin-bottom:7px}.tag{display:inline-block;color:#cdd7e8;border:1px solid var(--line);padding:4px 8px;border-radius:999px;font-size:12px}.lang{margin-top:18px}.lang h3{margin-bottom:8px}pre{overflow:auto;background:#050811;border:1px solid var(--line);border-radius:14px;padding:18px;color:#cdd7e8;line-height:1.55;white-space:pre-wrap;word-break:break-word}.note{border-left:3px solid var(--warn);padding:12px 15px;background:#100f0a;border-radius:8px;color:#d9d2bd}.endpoint{display:flex;gap:12px;align-items:flex-start}.badge{min-width:52px;text-align:center;padding:6px 8px;border-radius:8px;background:#12392f;color:#6ee7c4;font-weight:900;font-size:11px}.copy{float:right;background:#151d2d;border:1px solid var(--line);color:#dce6f7;border-radius:8px;padding:6px 10px;cursor:pointer}.search{width:100%;padding:13px 15px;background:#090e18;border:1px solid var(--line);border-radius:11px;color:var(--text);margin:10px 0 18px}.footer{margin-top:55px;color:#6f7c92;font-size:13px}
+</style></head><body><header><div class="logo">ZUKO<span>API</span></div><nav><a href="/dashboard">Console</a> &nbsp; <a href="/admin">Admin</a></nav></header><main class="wrap"><section class="hero"><div class="eyebrow">Developer quick start</div><h1>Use ZUKO API in minutes.</h1><p>Every <code>/v1/</code> endpoint uses your API key. Copy one of the examples below and plug it into a bot, website, mobile app, backend, Python script, or any HTTP client.</p><a class="cta" href="/dashboard">Get an API key</a><a class="ghost" href="#quickstart">Quick start</a></section>
+<section id="quickstart" class="section"><h2>How to call the API</h2><div class="steps"><div class="step"><b>1. Create your account</b><span class="muted">Register in the developer console and verify your email if verification is enabled.</span></div><div class="step"><b>2. Create an API key</b><span class="muted">Open the console, create a key and keep it private. Do not put it in frontend JavaScript.</span></div><div class="step"><b>3. Add the key</b><span class="muted">Use <code>Authorization: Bearer YOUR_API_KEY</code> or <code>x-api-key</code>.</span></div><div class="step"><b>4. Call an endpoint</b><span class="muted">Use the exact method and route shown below. GET parameters go in the URL; POST data goes in JSON.</span></div></div></section>
+<section class="section"><div class="panel"><h2>Base URL</h2><pre id="base">BASE_URL = window.location.origin</pre><div class="muted">When your API is deployed on Railway, this becomes your public Railway URL.</div></div></section>
+<section class="section"><h2>Copy-and-use examples</h2><div class="lang"><h3>cURL</h3><pre>curl -X GET "https://YOUR-API-DOMAIN.up.railway.app/v1/tools/uuid" \
+  -H "Authorization: Bearer YOUR_API_KEY"</pre></div><div class="lang"><h3>Node.js / JavaScript</h3><pre>const BASE_URL = 'https://YOUR-API-DOMAIN.up.railway.app';
+const API_KEY = process.env.ZUKO_API_KEY;
 
-module.exports = { definition, register };
+const res = await fetch(`${BASE_URL}/v1/tools/uuid`, {
+  headers: { Authorization: `Bearer ${API_KEY}` }
+});
 
-// register your GET/POST/PUT route here
-// use sendResult(...) for ZUKO usage logging</pre></section></main><script>fetch('/dashboard/api/endpoints').then(r=>r.json()).then(x=>{const g=document.getElementById('grid');(x.endpoints||[]).forEach(e=>{const c=document.createElement('div');c.className='card';c.innerHTML='<div class="method">'+e.method+'</div><div class="route">'+e.path+'</div><div class="muted">'+(e.description||'')+'</div>';g.appendChild(c)})}).catch(()=>{});</script></body></html>
+const data = await res.json();
+console.log(data);</pre></div><div class="lang"><h3>Python</h3><pre>import os, requests
+
+url = 'https://YOUR-API-DOMAIN.up.railway.app/v1/tools/uuid'
+headers = {'Authorization': f"Bearer {os.environ['ZUKO_API_KEY']}"}
+
+response = requests.get(url, headers=headers, timeout=30)
+print(response.json())</pre></div><div class="lang"><h3>PHP</h3><pre>$url = 'https://YOUR-API-DOMAIN.up.railway.app/v1/tools/uuid';
+$ch = curl_init($url);
+curl_setopt_array($ch, [
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . getenv('ZUKO_API_KEY')]
+]);
+echo curl_exec($ch);</pre></div></div></section>
+<section class="section"><div class="panel"><h2>Bot example — WhatsApp / Baileys</h2><p class="muted">Your bot can call ZUKO exactly like any other HTTPS API. Keep the API key in an environment variable.</p><pre>const ZUKO_API = 'https://YOUR-API-DOMAIN.up.railway.app';
+const ZUKO_KEY = process.env.ZUKO_API_KEY;
+
+async function zuko(path, options = {}) {
+  const response = await fetch(`${ZUKO_API}${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${ZUKO_KEY}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  return response.json();
+}
+
+// Example inside a bot command:
+const result = await zuko('/v1/tools/uuid');
+await sock.sendMessage(from, { text: `UUID: ${result.uuid}` });</pre><div class="note">Never paste a private API key directly into a public GitHub repository, browser frontend, or shared bot source. Store it as an environment variable such as <code>ZUKO_API_KEY</code>.</div></div></section>
+<section id="endpoints" class="section"><h2>Built-in endpoints</h2><input id="search" class="search" placeholder="Search endpoints..." autocomplete="off"><div id="grid" class="grid"></div></section>
+<section class="section"><div class="panel"><h2>Build your own endpoint</h2><p class="muted">Create a JavaScript module under <code>api/endpoints/</code>. ZUKO discovers endpoint modules automatically when the server starts.</p><pre>api/endpoints/tools/hello.js
+
+module.exports = {
+  name: 'Hello',
+  method: 'GET',
+  path: '/v1/tools/hello',
+  category: 'Tools',
+  description: 'Return a greeting.',
+
+  async execute({ query, ctx }) {
+    const name = ctx.cleanString(query.name || 'Developer', 80);
+    return { status: true, message: `Hello ${name} 👋` };
+  }
+};</pre><p class="muted">Platform features such as API-key authentication, quotas, rate limits and usage logging are handled automatically for <code>/v1/</code> routes.</p></div></section><div class="footer">ZUKO API · Developer documentation</div></main><script>
+const grid=document.getElementById('grid'), search=document.getElementById('search'); let endpoints=[];
+const esc=x=>String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function render(){const q=search.value.trim().toLowerCase(); grid.innerHTML=''; endpoints.filter(e=>!q||[e.name,e.path,e.category,e.description,e.method].join(' ').toLowerCase().includes(q)).forEach((e,i)=>{const c=document.createElement('div');c.className='card';const method=esc(e.method),path=esc(e.path);c.innerHTML=`<div class="endpoint"><div class="badge">${method}</div><div><div class="route">${path}</div><div class="muted">${esc(e.description||'')}</div><div style="margin-top:12px"><span class="tag">${esc(e.category||'General')}</span> <button class="copy" data-path="${path}">Copy route</button></div></div></div>`; c.querySelector('.copy').onclick=()=>{navigator.clipboard?.writeText(e.path);c.querySelector('.copy').textContent='Copied';setTimeout(()=>c.querySelector('.copy').textContent='Copy route',1200)};grid.appendChild(c)}); if(!grid.children.length)grid.innerHTML='<div class="muted">No matching endpoints.</div>'}
+fetch('/dashboard/api/endpoints').then(r=>r.json()).then(x=>{endpoints=x.endpoints||[];render()}).catch(()=>{grid.innerHTML='<div class="muted">Unable to load the endpoint catalog.</div>'}); search.addEventListener('input',render);
+</script></body></html>
