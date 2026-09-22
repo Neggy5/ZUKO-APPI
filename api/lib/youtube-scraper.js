@@ -56,47 +56,103 @@ async function createJob(url, type, quality) {
   return { url: data.url, filename: data.filename };
 }
 
-async function download(rawUrl, type, quality) {
-  const youtubeUrl = validateYoutubeUrl(rawUrl);
-  const job = await createJob(youtubeUrl, type, quality);
-  const response = await fetchWithTimeout(job.url, { headers: { accept: '*/*' } });
-  if (!response.ok || !response.body) throw new Error(`YouTube media download returned HTTP ${response.status}.`);
+async function fetchTunnelToFile(tunnelUrl, filepath) {
+  const response = await fetchWithTimeout(tunnelUrl, {
+    method: 'GET',
+    redirect: 'follow',
+    headers: {
+      accept: '*/*',
+      'cache-control': 'no-cache',
+      'user-agent': 'ZUKO-APPI/1.0'
+    }
+  });
+
+  if (!response.ok) throw new Error(`YouTube media download returned HTTP ${response.status}.`);
+  if (!response.body) throw new Error('YouTube media download returned an empty body.');
 
   const declared = Number(response.headers.get('content-length') || 0);
   if (declared > MAX_FILE_BYTES) throw new Error('Downloaded file exceeds the configured size limit.');
 
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zuko-youtube-'));
-  const ext = type === 'audio' ? '.mp3' : '.mp4';
-  const fallback = type === 'audio' ? `youtube-${crypto.randomBytes(6).toString('hex')}.mp3` : `youtube-${crypto.randomBytes(6).toString('hex')}.mp4`;
-  const filename = cleanFilename(job.filename, fallback);
-  const finalName = path.extname(filename).toLowerCase() === ext ? filename : `${filename.replace(/\.[^.]+$/, '')}${ext}`;
-  const filepath = path.join(dir, finalName);
-
+  const out = fs.createWriteStream(filepath, { flags: 'wx' });
   let size = 0;
+  let completed = false;
   try {
-    const out = fs.createWriteStream(filepath, { flags: 'wx' });
+    // Node's fetch() returns a WHATWG ReadableStream. Reading it explicitly avoids
+    // relying on implicit stream conversion and lets us enforce the byte limit.
     const reader = response.body.getReader();
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (!value || value.byteLength === 0) continue;
         size += value.byteLength;
         if (size > MAX_FILE_BYTES) {
           await reader.cancel();
           throw new Error('Downloaded file exceeds the configured size limit.');
         }
-        if (!out.write(Buffer.from(value))) await new Promise(resolve => out.once('drain', resolve));
+        if (!out.write(Buffer.from(value))) {
+          await new Promise((resolve, reject) => {
+            out.once('drain', resolve);
+            out.once('error', reject);
+          });
+        }
       }
-      await new Promise((resolve, reject) => { out.end(err => err ? reject(err) : resolve()); });
-    } catch (e) {
-      out.destroy();
-      throw e;
+    } finally {
+      reader.releaseLock();
     }
-    return { dir, filepath, filename: finalName, size, cleanup: () => fsp.rm(dir, { recursive: true, force: true }) };
+    await new Promise((resolve, reject) => out.end(err => err ? reject(err) : resolve()));
+    completed = true;
+  } finally {
+    if (!completed) out.destroy();
+  }
+
+  const stat = await fsp.stat(filepath);
+  if (size <= 0 || stat.size <= 0) {
+    throw new Error('YouTube media tunnel returned a zero-byte file.');
+  }
+  return stat.size;
+}
+
+async function download(rawUrl, type, quality) {
+  const youtubeUrl = validateYoutubeUrl(rawUrl);
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'zuko-youtube-'));
+  const ext = type === 'audio' ? '.mp3' : '.mp4';
+  const fallback = `youtube-${crypto.randomBytes(6).toString('hex')}${ext}`;
+
+  try {
+    // A Cobalt tunnel is a short-lived, one-time media URL. If the first tunnel
+    // expires/is empty before ZUKO consumes it, request a fresh tunnel once.
+    let lastError;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      let filepath;
+      try {
+        const job = await createJob(youtubeUrl, type, quality);
+        const filename = cleanFilename(job.filename, fallback);
+        const finalName = path.extname(filename).toLowerCase() === ext
+          ? filename
+          : `${filename.replace(/\.[^.]+$/, '')}${ext}`;
+        filepath = path.join(dir, finalName);
+
+        const size = await fetchTunnelToFile(job.url, filepath);
+        return {
+          dir,
+          filepath,
+          filename: finalName,
+          size,
+          cleanup: () => fsp.rm(dir, { recursive: true, force: true })
+        };
+      } catch (error) {
+        lastError = error;
+        if (filepath) {
+          try { await fsp.rm(filepath, { force: true }); } catch {}
+        }
+        if (attempt < 2) continue;
+      }
+    }
+    throw lastError || new Error('YouTube media download failed.');
   } catch (e) {
     await fsp.rm(dir, { recursive: true, force: true });
     throw e;
   }
 }
-
 module.exports = { download, MAX_FILE_BYTES };
