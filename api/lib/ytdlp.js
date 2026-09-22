@@ -13,6 +13,7 @@ const YTDLP_BIN = process.env.YTDLP_BIN || 'yt-dlp';
 const MAX_FILE_BYTES = Number(process.env.YTDLP_MAX_FILE_BYTES || 100 * 1024 * 1024);
 const TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS || 120000);
 const IMPERSONATE_TARGET = String(process.env.YTDLP_IMPERSONATE || 'Chrome-131:Android-14').trim();
+const JS_RUNTIMES = String(process.env.YTDLP_JS_RUNTIMES || 'node').trim();
 
 function validateUrl(raw) {
   const value = String(raw || '').trim();
@@ -50,6 +51,12 @@ async function assertPublicHost(url) {
   }
 }
 
+function ytDlpRuntimeArgs() {
+  const args = [];
+  if (JS_RUNTIMES) args.push('--js-runtimes', JS_RUNTIMES);
+  return args;
+}
+
 function run(args, { cwd, timeoutMs = TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(YTDLP_BIN, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -70,7 +77,7 @@ async function ensureTool() {
 
 async function inspect(rawUrl, mode = 'info') {
   const url = validateUrl(rawUrl); await assertPublicHost(url); await ensureTool();
-  const args = ['--ignore-config', '--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download'];
+  const args = ['--ignore-config', '--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', ...ytDlpRuntimeArgs()];
   if (IMPERSONATE_TARGET) args.push('--impersonate', IMPERSONATE_TARGET);
   args.push('--', url.toString());
   const { stdout } = await run(args);
@@ -91,7 +98,7 @@ async function download(rawUrl, type, quality) {
   const token = crypto.randomBytes(8).toString('hex');
   const template = path.join(dir, `${token}.%(ext)s`);
   const format = type === 'audio' ? 'bestaudio/best' : (quality === 'audio' ? 'bestaudio/best' : (quality && /^\d{3,4}$/.test(String(quality)) ? `bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]/best[height<=${quality}]/best` : 'bestvideo+bestaudio/best'));
-  const args = ['--ignore-config', '--no-playlist', '--no-part', '--no-continue', '--force-overwrites', '--no-mtime', '--restrict-filenames', '--max-filesize', String(MAX_FILE_BYTES)];
+  const args = ['--ignore-config', '--no-playlist', '--no-part', '--no-continue', '--force-overwrites', '--no-mtime', '--restrict-filenames', '--max-filesize', String(MAX_FILE_BYTES), ...ytDlpRuntimeArgs()];
   if (IMPERSONATE_TARGET) args.push('--impersonate', IMPERSONATE_TARGET);
   args.push('-f', format, '-o', template);
   if (type === 'audio') args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
@@ -107,4 +114,4 @@ async function download(rawUrl, type, quality) {
   } catch (error) { await fs.rm(dir, { recursive:true, force:true }); throw error; }
 }
 
-module.exports = { inspect, download, ensureTool, MAX_FILE_BYTES, IMPERSONATE_TARGET };
+module.exports = { inspect, download, ensureTool, MAX_FILE_BYTES, IMPERSONATE_TARGET, JS_RUNTIMES };
