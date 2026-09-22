@@ -14,6 +14,8 @@ const MAX_FILE_BYTES = Number(process.env.YTDLP_MAX_FILE_BYTES || 100 * 1024 * 1
 const TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS || 120000);
 const IMPERSONATE_TARGET = String(process.env.YTDLP_IMPERSONATE || 'Chrome-131:Android-14').trim();
 const JS_RUNTIMES = String(process.env.YTDLP_JS_RUNTIMES || 'node').trim();
+const POT_SCRIPT = String(process.env.YTDLP_POT_SCRIPT || '/opt/bgutil-ytdlp-pot-provider/server/build/generate_once.js').trim();
+const YOUTUBE_CLIENTS = String(process.env.YTDLP_YOUTUBE_CLIENTS || 'default,mweb,web_safari').trim();
 
 function validateUrl(raw) {
   const value = String(raw || '').trim();
@@ -54,6 +56,8 @@ async function assertPublicHost(url) {
 function ytDlpRuntimeArgs() {
   const args = [];
   if (JS_RUNTIMES) args.push('--js-runtimes', JS_RUNTIMES);
+  if (POT_SCRIPT) args.push('--extractor-args', `youtubepot-bgutilscript:script_path=${POT_SCRIPT}`);
+  if (YOUTUBE_CLIENTS) args.push('--extractor-args', `youtube:player-client=${YOUTUBE_CLIENTS}`);
   return args;
 }
 
@@ -77,7 +81,7 @@ async function ensureTool() {
 
 async function inspect(rawUrl, mode = 'info') {
   const url = validateUrl(rawUrl); await assertPublicHost(url); await ensureTool();
-  const args = ['--ignore-config', '--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', ...ytDlpRuntimeArgs()];
+  const args = ['--ignore-config', '--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--force-ipv4', '--retries', '3', '--fragment-retries', '3', ...ytDlpRuntimeArgs()];
   if (IMPERSONATE_TARGET) args.push('--impersonate', IMPERSONATE_TARGET);
   args.push('--', url.toString());
   const { stdout } = await run(args);
@@ -98,7 +102,7 @@ async function download(rawUrl, type, quality) {
   const token = crypto.randomBytes(8).toString('hex');
   const template = path.join(dir, `${token}.%(ext)s`);
   const format = type === 'audio' ? 'bestaudio/best' : (quality === 'audio' ? 'bestaudio/best' : (quality && /^\d{3,4}$/.test(String(quality)) ? `bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]/best[height<=${quality}]/best` : 'bestvideo+bestaudio/best'));
-  const args = ['--ignore-config', '--no-playlist', '--no-part', '--no-continue', '--force-overwrites', '--no-mtime', '--restrict-filenames', '--max-filesize', String(MAX_FILE_BYTES), ...ytDlpRuntimeArgs()];
+  const args = ['--ignore-config', '--no-playlist', '--no-part', '--no-continue', '--force-overwrites', '--no-mtime', '--restrict-filenames', '--max-filesize', String(MAX_FILE_BYTES), '--force-ipv4', '--retries', '3', '--fragment-retries', '3', ...ytDlpRuntimeArgs()];
   if (IMPERSONATE_TARGET) args.push('--impersonate', IMPERSONATE_TARGET);
   args.push('-f', format, '-o', template);
   if (type === 'audio') args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
