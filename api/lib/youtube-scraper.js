@@ -59,90 +59,80 @@ async function createJob(url, type, quality) {
 }
 
 async function fetchTunnelToFile(tunnelUrl, filepath) {
-  const maxRedirects = 5;
+  const axios = require('axios');
+  const { pipeline } = require('stream/promises');
 
-  function requestStream(url, redirectsLeft) {
-    return new Promise((resolve, reject) => {
-      let parsed;
-      try { parsed = new URL(url); } catch { return reject(new Error('Invalid YouTube media tunnel URL.')); }
-
-      const transport = parsed.protocol === 'https:' ? https : http;
-      const req = transport.get(parsed, {
-        headers: {
-          accept: '*/*',
-          'cache-control': 'no-cache',
-          'user-agent': 'ZUKO-APPI/1.0'
-        }
-      }, (response) => {
-        const status = response.statusCode || 0;
-        if ([301, 302, 303, 307, 308].includes(status) && response.headers.location) {
-          response.resume();
-          if (redirectsLeft <= 0) return reject(new Error('Too many redirects while downloading YouTube media.'));
-          const next = new URL(response.headers.location, parsed).toString();
-          return requestStream(next, redirectsLeft - 1).then(resolve, reject);
-        }
-        if (status < 200 || status >= 300) {
-          response.resume();
-          return reject(new Error(`YouTube media download returned HTTP ${status}.`));
-        }
-        resolve(response);
-      });
-
-      req.setTimeout(TIMEOUT_MS, () => {
-        req.destroy(new Error('YouTube media download timed out.'));
-      });
-      req.on('error', reject);
+  let response;
+  try {
+    response = await axios.get(tunnelUrl, {
+      responseType: 'stream',
+      maxRedirects: 5,
+      timeout: TIMEOUT_MS,
+      decompress: false,
+      validateStatus: () => true,
+      headers: {
+        Accept: '*/*',
+        'Accept-Encoding': 'identity',
+        'Cache-Control': 'no-cache',
+        'User-Agent': 'ZUKO-APPI/1.1'
+      }
     });
+  } catch (error) {
+    throw new Error(`YouTube media tunnel request failed: ${error.message}`);
   }
 
-  const response = await requestStream(tunnelUrl, maxRedirects);
-  const declared = Number(response.headers['content-length'] || 0);
+  const status = Number(response.status || 0);
+  const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+  if (status < 200 || status >= 300) {
+    let body = '';
+    try {
+      response.data.setEncoding('utf8');
+      for await (const chunk of response.data) {
+        body += chunk;
+        if (body.length >= 8192) break;
+      }
+    } catch {}
+    throw new Error(`YouTube media tunnel returned HTTP ${status}${body ? `: ${body.slice(0, 300)}` : '.'}`);
+  }
+
+  const declared = Number(response.headers?.['content-length'] || 0);
   if (declared > MAX_FILE_BYTES) {
-    response.destroy();
+    response.data.destroy();
     throw new Error('Downloaded file exceeds the configured size limit.');
   }
 
-  const contentType = String(response.headers['content-type'] || '').toLowerCase();
+  // Cobalt's /tunnel endpoint is a raw media stream. Never treat a successful
+  // 200 tunnel response as JSON merely because an upstream proxy supplied a
+  // generic content type. Validate the first bytes only when the content type
+  // explicitly identifies JSON/HTML.
   if (contentType.includes('application/json') || contentType.includes('text/html')) {
     let body = '';
-    for await (const chunk of response) {
-      body += Buffer.from(chunk).toString('utf8');
-      if (body.length > 8192) break;
-    }
+    try {
+      response.data.setEncoding('utf8');
+      for await (const chunk of response.data) {
+        body += chunk;
+        if (body.length >= 8192) break;
+      }
+    } catch {}
     throw new Error(`YouTube media tunnel returned an error response${body ? `: ${body.slice(0, 300)}` : '.'}`);
   }
 
-  await new Promise((resolve, reject) => {
-    const out = fs.createWriteStream(filepath, { flags: 'wx' });
-    let size = 0;
-    let settled = false;
-
-    const fail = (error) => {
-      if (settled) return;
-      settled = true;
-      out.destroy();
-      response.destroy();
-      reject(error);
-    };
-
-    response.on('data', chunk => {
-      if (settled) return;
-      size += chunk.length;
-      if (size > MAX_FILE_BYTES) {
-        fail(new Error('Downloaded file exceeds the configured size limit.'));
-        return;
-      }
-      if (!out.write(chunk)) response.pause();
-    });
-    out.on('drain', () => response.resume());
-    response.on('end', () => {
-      if (settled) return;
-      settled = true;
-      out.end(() => resolve(size));
-    });
-    response.on('error', fail);
-    out.on('error', fail);
+  const out = require('fs').createWriteStream(filepath, { flags: 'wx' });
+  let size = 0;
+  response.data.on('data', (chunk) => {
+    size += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+    if (size > MAX_FILE_BYTES) {
+      response.data.destroy(new Error('Downloaded file exceeds the configured size limit.'));
+    }
   });
+
+  try {
+    await pipeline(response.data, out);
+  } catch (error) {
+    try { out.destroy(); } catch {}
+    try { await fsp.rm(filepath, { force: true }); } catch {}
+    throw new Error(`YouTube media tunnel stream failed: ${error.message}`);
+  }
 
   const stat = await fsp.stat(filepath);
   if (stat.size <= 0) throw new Error('YouTube media tunnel returned a zero-byte file.');
