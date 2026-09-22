@@ -14,7 +14,7 @@ const MAX_FILE_BYTES = Number(process.env.YTDLP_MAX_FILE_BYTES || 100 * 1024 * 1
 const TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS || 120000);
 const IMPERSONATE_TARGET = String(process.env.YTDLP_IMPERSONATE || 'Chrome-131:Android-14').trim();
 const JS_RUNTIMES = String(process.env.YTDLP_JS_RUNTIMES || 'node').trim();
-const POT_SCRIPT = String(process.env.YTDLP_POT_SCRIPT || '/opt/bgutil-ytdlp-pot-provider/server/build/generate_once.js').trim();
+const POT_URL = String(process.env.YTDLP_POT_URL || 'http://127.0.0.1:4416').trim();
 const YOUTUBE_CLIENTS = String(process.env.YTDLP_YOUTUBE_CLIENTS || 'default,mweb,web_safari').trim();
 
 function validateUrl(raw) {
@@ -56,7 +56,7 @@ async function assertPublicHost(url) {
 function ytDlpRuntimeArgs() {
   const args = [];
   if (JS_RUNTIMES) args.push('--js-runtimes', JS_RUNTIMES);
-  if (POT_SCRIPT) args.push('--extractor-args', `youtubepot-bgutilscript:script_path=${POT_SCRIPT}`);
+  if (POT_URL) args.push('--extractor-args', `youtubepot-bgutilhttp:base_url=${POT_URL}`);
   if (YOUTUBE_CLIENTS) args.push('--extractor-args', `youtube:player-client=${YOUTUBE_CLIENTS}`);
   return args;
 }
