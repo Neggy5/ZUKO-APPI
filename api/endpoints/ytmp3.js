@@ -12,6 +12,7 @@ module.exports = {
     if (!query.url) return { statusCode: 400, data: { status: false, error: 'url is required' } };
     try {
       const job = await download(query.url, 'audio');
+      if (!job.size || job.size <= 0) throw Object.assign(new Error('Downloaded media file is empty or corrupted.'), { statusCode: 502 });
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Content-Disposition', `attachment; filename="${job.filename.replace(/[^\w. -]/g, '_')}"`);
       res.setHeader('Content-Length', String(job.size));
@@ -19,7 +20,7 @@ module.exports = {
       res.on('finish', job.cleanup); res.on('close', job.cleanup);
       res.flushHeaders();
       const stream = require('fs').createReadStream(job.filepath);
-      stream.on('error', job.cleanup);
+      stream.on('error', (err) => { job.cleanup(); if (!res.headersSent) res.status(502); res.destroy(err); });
       stream.pipe(res);
       return null;
     } catch (error) {
