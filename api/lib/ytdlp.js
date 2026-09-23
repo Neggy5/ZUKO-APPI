@@ -15,7 +15,9 @@ const TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS || 120000);
 const IMPERSONATE_TARGET = String(process.env.YTDLP_IMPERSONATE || 'Chrome-131:Android-14').trim();
 const JS_RUNTIMES = String(process.env.YTDLP_JS_RUNTIMES || 'node').trim();
 const POT_URL = String(process.env.YTDLP_POT_URL || 'http://127.0.0.1:4416').trim();
-const YOUTUBE_CLIENTS = String(process.env.YTDLP_YOUTUBE_CLIENTS || 'default,mweb,web_safari').trim();
+const YOUTUBE_CLIENTS = String(process.env.YTDLP_YOUTUBE_CLIENTS || 'mweb').trim();
+const YOUTUBE_COOKIES_FILE = String(process.env.YOUTUBE_COOKIES_FILE || '/app/config/youtube-cookies.txt').trim();
+const YOUTUBE_COOKIES_B64 = String(process.env.YOUTUBE_COOKIES_B64 || '').trim();
 
 function validateUrl(raw) {
   const value = String(raw || '').trim();
@@ -53,6 +55,23 @@ async function assertPublicHost(url) {
   }
 }
 
+async function prepareYoutubeCookies() {
+  if (!YOUTUBE_COOKIES_B64) return null;
+  try {
+    await fs.mkdir(path.dirname(YOUTUBE_COOKIES_FILE), { recursive: true });
+    const decoded = Buffer.from(YOUTUBE_COOKIES_B64, 'base64');
+    if (!decoded.length) throw new Error('YOUTUBE_COOKIES_B64 is empty.');
+    await fs.writeFile(YOUTUBE_COOKIES_FILE, decoded, { mode: 0o600 });
+    return YOUTUBE_COOKIES_FILE;
+  } catch (error) {
+    throw new Error(`Unable to prepare YouTube cookies: ${error.message}`);
+  }
+}
+
+function cookieArgs(cookieFile) {
+  return cookieFile ? ['--cookies', cookieFile] : [];
+}
+
 function ytDlpRuntimeArgs() {
   const args = [];
   if (JS_RUNTIMES) args.push('--js-runtimes', JS_RUNTIMES);
@@ -81,7 +100,8 @@ async function ensureTool() {
 
 async function inspect(rawUrl, mode = 'info') {
   const url = validateUrl(rawUrl); await assertPublicHost(url); await ensureTool();
-  const args = ['--ignore-config', '--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--force-ipv4', '--retries', '3', '--fragment-retries', '3', ...ytDlpRuntimeArgs()];
+  const cookieFile = url.hostname.toLowerCase().endsWith('youtube.com') || url.hostname.toLowerCase() === 'youtu.be' ? await prepareYoutubeCookies() : null;
+  const args = ['--ignore-config', '--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--force-ipv4', '--retries', '3', '--fragment-retries', '3', ...ytDlpRuntimeArgs(), ...cookieArgs(cookieFile)];
   if (IMPERSONATE_TARGET) args.push('--impersonate', IMPERSONATE_TARGET);
   args.push('--', url.toString());
   const { stdout } = await run(args);
@@ -102,7 +122,8 @@ async function download(rawUrl, type, quality) {
   const token = crypto.randomBytes(8).toString('hex');
   const template = path.join(dir, `${token}.%(ext)s`);
   const format = type === 'audio' ? 'bestaudio/best' : (quality === 'audio' ? 'bestaudio/best' : (quality && /^\d{3,4}$/.test(String(quality)) ? `bestvideo[height<=${quality}]+bestaudio/best[height<=${quality}]/best[height<=${quality}]/best` : 'bestvideo+bestaudio/best'));
-  const args = ['--ignore-config', '--no-playlist', '--no-part', '--no-continue', '--force-overwrites', '--no-mtime', '--restrict-filenames', '--max-filesize', String(MAX_FILE_BYTES), '--force-ipv4', '--retries', '3', '--fragment-retries', '3', ...ytDlpRuntimeArgs()];
+  const cookieFile = url.hostname.toLowerCase().endsWith('youtube.com') || url.hostname.toLowerCase() === 'youtu.be' ? await prepareYoutubeCookies() : null;
+  const args = ['--ignore-config', '--no-playlist', '--no-part', '--no-continue', '--force-overwrites', '--no-mtime', '--restrict-filenames', '--max-filesize', String(MAX_FILE_BYTES), '--force-ipv4', '--retries', '3', '--fragment-retries', '3', ...ytDlpRuntimeArgs(), ...cookieArgs(cookieFile)];
   if (IMPERSONATE_TARGET) args.push('--impersonate', IMPERSONATE_TARGET);
   args.push('-f', format, '-o', template);
   if (type === 'audio') args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
@@ -118,4 +139,4 @@ async function download(rawUrl, type, quality) {
   } catch (error) { await fs.rm(dir, { recursive:true, force:true }); throw error; }
 }
 
-module.exports = { inspect, download, ensureTool, MAX_FILE_BYTES, IMPERSONATE_TARGET, JS_RUNTIMES };
+module.exports = { inspect, download, ensureTool, MAX_FILE_BYTES, IMPERSONATE_TARGET, JS_RUNTIMES, YTDLP_YOUTUBE_CLIENTS: YOUTUBE_CLIENTS, YOUTUBE_COOKIES_FILE: YOUTUBE_COOKIES_FILE };
