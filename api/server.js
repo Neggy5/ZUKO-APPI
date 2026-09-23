@@ -547,7 +547,70 @@ res.status(201).json({
     res.status(500).json({ status: false, error: process.env.NODE_ENV === 'production' ? 'Internal server error.' : (err.message || 'Internal server error.') });
   });
 
-  app.listen(PORT, '0.0.0.0', () => console.log(`${API_NAME} ${API_VERSION} listening on :${PORT}`));
+  
+// --- ZUKO YTMP3/YTMP4 direct routes ---
+// These are intentionally registered in server.js so they work even when
+// Railway starts the application with the package.json "start" command.
+const { download: ytdlpDownload, MAX_FILE_BYTES: YTDLP_MAX_FILE_BYTES } = require('./lib/ytdlp');
+const fs = require('fs');
+
+async function handleYtmp(req, res, type) {
+  if (!req.query || !req.query.url) {
+    return res.status(400).json({ status: false, error: 'url is required' });
+  }
+
+  try {
+    const job = await ytdlpDownload(
+      req.query.url,
+      type,
+      req.query.quality || req.query.height
+    );
+
+    if (!job || !job.filepath || !job.size || job.size <= 0) {
+      throw new Error('Downloaded media file is empty or corrupted.');
+    }
+
+    const contentType = type === 'audio' ? 'audio/mpeg' : 'video/mp4';
+    const filename = String(job.filename || `zuko.${type === 'audio' ? 'mp3' : 'mp4'}`)
+      .replace(/[^\w. -]/g, '_');
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', String(job.size));
+    res.setHeader('X-ZUKO-Max-File-Bytes', String(YTDLP_MAX_FILE_BYTES));
+
+    const cleanup = () => {
+      try { if (job.cleanup) job.cleanup(); } catch (_) {}
+    };
+    res.once('finish', cleanup);
+    res.once('close', cleanup);
+
+    const stream = fs.createReadStream(job.filepath);
+    stream.on('error', (err) => {
+      cleanup();
+      if (!res.headersSent) {
+        res.status(502).json({ status: false, error: err.message });
+      } else {
+        res.destroy(err);
+      }
+    });
+    stream.pipe(res);
+  } catch (error) {
+    console.error(`[ytmp${type === 'audio' ? '3' : '4'}]`, error);
+    if (!res.headersSent) {
+      res.status(error.statusCode || 502).json({
+        status: false,
+        error: error.message || 'YouTube download failed.'
+      });
+    }
+  }
+}
+
+app.get('/v1/ytmp3', (req, res) => handleYtmp(req, res, 'audio'));
+app.get('/v1/ytmp4', (req, res) => handleYtmp(req, res, 'video'));
+console.log('[ZUKO] YTMP3/YTMP4 routes mounted directly in server.js');
+
+app.listen(PORT, '0.0.0.0', () => console.log(`${API_NAME} ${API_VERSION} listening on :${PORT}`));
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
