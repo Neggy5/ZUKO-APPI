@@ -10,8 +10,6 @@ const axios = require('axios');
 const { Pool } = require('pg');
 const yts = require('yt-search');
 const bcrypt = require('bcryptjs');
-const { Resend } = require('resend');
-const { mountEndpoints } = require('./endpoint-loader');
 
 const PORT = Number(process.env.PORT || 3000);
 const API_PREFIX = '/v1';
@@ -20,12 +18,8 @@ const ADMIN_SECRET = String(process.env.ZUKO_ADMIN_SECRET || '');
 const DATABASE_URL = String(process.env.DATABASE_URL || '');
 const API_NAME = process.env.API_NAME || 'ZUKO API';
 const API_VERSION = process.env.API_VERSION || '1.0.0';
-const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '')).replace(/\/$/, '');
+const PUBLIC_BASE_URL = String(process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
 const SESSION_SECRET = String(process.env.SESSION_SECRET || ADMIN_SECRET);
-const EMAIL_VERIFICATION_REQUIRED = String(process.env.EMAIL_VERIFICATION_REQUIRED || 'true').toLowerCase() !== 'false';
-const RESEND_API_KEY = String(process.env.RESEND_API_KEY || '');
-const EMAIL_FROM = String(process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || 'ZUKO API <onboarding@resend.dev>');
-const VERIFICATION_TOKEN_TTL_MINUTES = Math.max(5, Number(process.env.VERIFICATION_TOKEN_TTL_MINUTES || 30));
 const API_IP_WINDOW_MS = Number(process.env.API_IP_WINDOW_MS || 60_000);
 const API_IP_LIMIT = Number(process.env.API_IP_LIMIT || 180);
 const API_KEY_WINDOW_MS = Number(process.env.API_KEY_WINDOW_MS || 60_000);
@@ -56,6 +50,7 @@ if (!ADMIN_PASSWORD) throw new Error('ZUKO_ADMIN_PASSWORD is required.');
 if (!ADMIN_SECRET || ADMIN_SECRET.length < 32) throw new Error('ZUKO_ADMIN_SECRET must be at least 32 characters.');
 
 const pool = new Pool({ connectionString: DATABASE_URL, max: 10, idleTimeoutMillis: 30000, connectionTimeoutMillis: 10000, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
+pool.on('error', (err) => console.error('[postgres] idle client error:', err?.stack || err));
 
 const PLANS = Object.freeze({
   free: { daily: 100, price: 0, durationDays: 0 },
@@ -67,8 +62,6 @@ const PAYMENT_METHOD = String(process.env.PREMIUM_PAY_METHOD || 'Opay');
 const PAYMENT_ACCOUNT_NUMBER = String(process.env.PREMIUM_PAY_NUMBER || '');
 const PAYMENT_ACCOUNT_NAME = String(process.env.PREMIUM_PAY_NAME || '');
 const BILLING_ADMIN_NUMBER = String(process.env.BILLING_ADMIN_NUMBER || '');
-const BUILTIN_ENDPOINTS = Object.freeze([]);
-let DYNAMIC_ENDPOINTS = [];
 async function getUserSubscription(userId){ const r=await pool.query(`SELECT * FROM subscriptions WHERE user_id=$1 AND status='active' AND expires_at > NOW() ORDER BY expires_at DESC LIMIT 1`,[userId]); return r.rows[0]||null; }
 async function effectivePlanForUser(userId){ const sub=await getUserSubscription(userId); return sub?.plan || 'free'; }
 function paymentReference(){ return 'ZUKO-' + crypto.randomBytes(4).toString('hex').toUpperCase(); }
@@ -98,73 +91,9 @@ async function createSession(userId) { const raw=sessionToken(); await pool.quer
 async function currentUser(req) { const raw=req.cookies?.zuko_session; if(!raw)return null; const r=await pool.query('SELECT u.* FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>NOW()',[sha256(raw)]); return r.rows[0]||null; }
 async function userOnly(req,res,next){ try { req.user=await currentUser(req); if(!req.user)return res.status(401).json({status:false,error:'Authentication required.'}); next(); } catch(e){next(e);} }
 
-function validEmail(value) {
-  // Normalize common copy/paste issues before validating.
-  let email = String(value ?? '')
-    .normalize('NFKC')
-    .replace(/[\u200B-\u200D\uFEFF]/g, '')
-    .replace(/[\u00A0]/g, ' ')
-    .trim()
-    .toLowerCase();
-
-  // Allow harmless spaces around @ and dots, but reject whitespace elsewhere.
-  email = email.replace(/\s*@\s*/g, '@').replace(/\s*\.\s*/g, '.');
-  if (email.length < 6 || email.length > 254 || /\s/.test(email) || email.includes('..')) return null;
-
-  const at = email.lastIndexOf('@');
-  if (at <= 0 || at === email.length - 1 || email.indexOf('@') !== at) return null;
-
-  const local = email.slice(0, at);
-  const domain = email.slice(at + 1);
-  if (local.length > 64 || !/^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+$/.test(local)) return null;
-  if (domain.length > 253 || !/^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(domain)) return null;
-  return email;
-}
+function validEmail(value) { const email=cleanString(value,254).toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null; }
 function passwordValid(value) { const p=String(value||''); return p.length>=8 && p.length<=200; }
 function requireSameOrigin(req) { const origin=String(req.get('origin')||''); return !origin || !PUBLIC_BASE_URL || origin===PUBLIC_BASE_URL; }
-
-const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
-
-function emailVerificationConfigured() {
-  return !EMAIL_VERIFICATION_REQUIRED || Boolean(resend && PUBLIC_BASE_URL);
-}
-
-async function issueEmailVerification(userId, email, name) {
-  if (!EMAIL_VERIFICATION_REQUIRED) return;
-  if (!resend || !PUBLIC_BASE_URL) {
-    throw new Error('Email verification is not configured. Set RESEND_API_KEY and ensure PUBLIC_BASE_URL or RAILWAY_PUBLIC_DOMAIN is available.');
-  }
-  const raw = crypto.randomBytes(32).toString('hex');
-  const hash = sha256(raw);
-  await pool.query(
-    `UPDATE users
-       SET email_verified=false,
-           email_verification_token_hash=$2,
-           email_verification_expires_at=NOW() + ($3 * INTERVAL '1 minute')
-     WHERE id=$1`,
-    [userId, hash, VERIFICATION_TOKEN_TTL_MINUTES]
-  );
-  const verifyUrl = `${PUBLIC_BASE_URL}/auth/verify?token=${encodeURIComponent(raw)}`;
-  const safeName = cleanString(name || 'Developer', 80) || 'Developer';
-  const html = `<!doctype html><html><body style="margin:0;background:#070a12;color:#f4f7fb;font-family:Arial,sans-serif;padding:30px">
-    <div style="max-width:560px;margin:auto;background:#0d111c;border:1px solid #20283a;border-radius:16px;padding:28px">
-      <div style="font-size:22px;font-weight:700">ZUKO API</div>
-      <p style="color:#9aa6ba">Developer Platform</p>
-      <h2>Verify your email</h2>
-      <p>Hi ${safeName.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}, confirm your email address to activate your ZUKO developer account.</p>
-      <p><a href="${verifyUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:12px 18px;border-radius:9px;font-weight:700">Verify email address</a></p>
-      <p style="color:#8c98aa;font-size:12px">This link expires in ${VERIFICATION_TOKEN_TTL_MINUTES} minutes. If you did not create this account, you can ignore this email.</p>
-    </div></body></html>`;
-
-  const { error } = await resend.emails.send({
-    from: EMAIL_FROM,
-    to: [email],
-    subject: 'Verify your ZUKO API email',
-    text: `Hi ${safeName}, verify your ZUKO API email here: ${verifyUrl}. This link expires in ${VERIFICATION_TOKEN_TTL_MINUTES} minutes.`,
-    html
-  });
-  if (error) throw new Error(error.message || 'Resend failed to send the verification email.');
-}
 
 
 async function migrate() {
@@ -176,8 +105,7 @@ async function migrate() {
       avatar TEXT,
       password_hash TEXT,
       email_verified BOOLEAN NOT NULL DEFAULT FALSE,
-      email_verification_token_hash CHAR(64),
-      email_verification_expires_at TIMESTAMPTZ,
+      free_key_issued_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_login_at TIMESTAMPTZ
     );
@@ -254,10 +182,11 @@ async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS request_logs_created_at_idx ON request_logs(created_at DESC);
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token_hash CHAR(64);
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMPTZ;
     ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS owner_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL;
   `);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS free_key_issued_at TIMESTAMPTZ;`);
+  await pool.query(`DELETE FROM api_keys WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY owner_user_id ORDER BY created_at ASC, id ASC) rn FROM api_keys WHERE plan='free' AND owner_user_id IS NOT NULL) d WHERE rn > 1);`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS api_keys_one_free_per_user_idx ON api_keys(owner_user_id) WHERE plan='free' AND owner_user_id IS NOT NULL;`);
 }
 
 async function getApiKey(raw) {
@@ -281,7 +210,10 @@ async function requireApiKey(req, res, next) {
     const plan = PLANS[key.plan] || PLANS.free;
     const usage = await pool.query('SELECT requests FROM usage_daily WHERE api_key_id=$1 AND usage_date=$2', [key.id, dayKey()]);
     const used = Number(usage.rows[0]?.requests || 0);
-    if (used >= plan.daily) return res.status(429).json({ status: false, error: 'Daily API quota exceeded.', plan: key.plan, limit: plan.daily, used });
+    if (used >= plan.daily) {
+      if (key.plan === 'free') return res.status(429).json({ status: false, error: 'Free API quota exceeded. Upgrade to a paid plan to continue.', plan: 'free', limit: plan.daily, used, upgradeRequired: true, buyUrl: '/dashboard#billing' });
+      return res.status(429).json({ status: false, error: 'Daily API quota exceeded.', plan: key.plan, limit: plan.daily, used });
+    }
     req.apiKey = key;
     req.usage = { used, limit: plan.daily };
     next();
@@ -305,6 +237,31 @@ function sendResult(res, req, started, status, payload) {
   return res.status(status).json(payload);
 }
 
+async function translate(text, target = 'en', source = 'auto') {
+  const q = cleanString(text, 5000);
+  if (!q) throw new Error('text is required');
+  const response = await axios.get('https://translate.googleapis.com/translate_a/single', {
+    params: { client: 'gtx', sl: source || 'auto', tl: target, dt: 't', q }, timeout: 10000
+  });
+  const chunks = Array.isArray(response.data?.[0]) ? response.data[0] : [];
+  const translated = chunks.map(x => x?.[0]).filter(Boolean).join('');
+  if (!translated) throw new Error('Translation provider returned no result.');
+  return translated;
+}
+
+async function aiChat(prompt, model = 'default') {
+  const base = String(process.env.AI_API_BASE || '').replace(/\/$/, '');
+  const key = String(process.env.AI_API_KEY || '');
+  if (!base || !key) throw new Error('AI provider is not configured on this API server.');
+  const response = await axios.post(`${base}/chat/completions`, {
+    model: model === 'default' ? (process.env.AI_DEFAULT_MODEL || 'default') : model,
+    messages: [{ role: 'user', content: cleanString(prompt, 12000) }]
+  }, { timeout: 45000, headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' } });
+  const text = response.data?.choices?.[0]?.message?.content;
+  if (!text) throw new Error('AI provider returned no text.');
+  return { text, model: response.data?.model || model };
+}
+
 class KeyRateLimiter {
   constructor(windowMs, limit) { this.windowMs = windowMs; this.limit = limit; this.map = new Map(); }
   async check(id) { const now = Date.now(); const x = this.map.get(id) || { start: now, count: 0 }; if (now - x.start >= this.windowMs) { x.start = now; x.count = 0; } x.count++; this.map.set(id, x); return x.count <= this.limit; }
@@ -318,19 +275,10 @@ async function main() {
   app.disable('x-powered-by');
   app.use((req, res, next) => { res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); if (req.path.startsWith('/v1/')) res.setHeader('Cache-Control','private, no-store'); next(); });
   app.use(helmet({ contentSecurityPolicy: false }));
-  app.use(cors({ origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(x => x.trim()) : (PUBLIC_BASE_URL || true) }));
-  app.use(express.json({ limit: MAX_BODY_BYTES })); app.use(express.urlencoded({ extended: false, limit: MAX_BODY_BYTES }));
+  app.use(cors({ origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(x => x.trim()) : true }));
+  app.use(express.json({ limit: MAX_BODY_BYTES }));
   app.use((req, _res, next) => { req.cookies = Object.fromEntries(String(req.headers.cookie || '').split(';').map(x => x.trim()).filter(Boolean).map(x => { const i=x.indexOf('='); return [i<0?x:x.slice(0,i), i<0?'':decodeURIComponent(x.slice(i+1))]; })); next(); });
   app.use(rateLimit({ windowMs: API_IP_WINDOW_MS, limit: API_IP_LIMIT, standardHeaders: 'draft-7', legacyHeaders: false, keyGenerator: req => clientIp(req), skip: req => req.path.startsWith('/healthz') || req.path.startsWith('/readyz') }));
-  // The console contains inline authentication JavaScript. Never let an old browser/proxy cache an obsolete login flow.
-  app.use((req, res, next) => {
-    if (req.path === '/' || req.path === '/login' || req.path === '/dashboard' || req.path.startsWith('/auth/')) {
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-    }
-    next();
-  });
 
   app.get('/healthz', async (_req, res) => {
     try { await pool.query('SELECT 1'); res.json({ status: true, service: API_NAME, version: API_VERSION, time: nowIso() }); }
@@ -342,7 +290,38 @@ async function main() {
 
   app.get(`${API_PREFIX}/info`, (req, res) => sendResult(res, req, Date.now(), 200, { status: true, name: API_NAME, version: API_VERSION, plan: req.apiKey.plan, quota: req.usage }));
 
-  DYNAMIC_ENDPOINTS = mountEndpoints(app, { API_PREFIX, cleanString, sendResult, API_NAME, nowIso });
+  app.get(`${API_PREFIX}/search/youtube`, async (req, res, next) => {
+    const started = Date.now();
+    try {
+      const q = cleanString(req.query.q, 300);
+      if (!q) return sendResult(res, req, started, 400, { status: false, error: 'q is required' });
+      const result = await yts(q);
+      const videos = (result.videos || []).slice(0, Math.min(Number(req.query.limit) || 10, 20)).map(v => ({ title: v.title, url: v.url, videoId: v.videoId, duration: v.timestamp, seconds: v.seconds, thumbnail: v.thumbnail, views: v.views, author: v.author?.name || null }));
+      return sendResult(res, req, started, 200, { status: true, query: q, results: videos });
+    } catch (err) { next(err); }
+  });
+
+  app.get(`${API_PREFIX}/tools/translate`, async (req, res, next) => {
+    const started = Date.now();
+    try {
+      const text = cleanString(req.query.text, 5000);
+      const target = cleanString(req.query.target || 'en', 20);
+      const source = cleanString(req.query.source || 'auto', 20);
+      if (!text) return sendResult(res, req, started, 400, { status: false, error: 'text is required' });
+      const result = await translate(text, target, source);
+      return sendResult(res, req, started, 200, { status: true, source, target, result });
+    } catch (err) { next(err); }
+  });
+
+  app.post(`${API_PREFIX}/ai/chat`, async (req, res, next) => {
+    const started = Date.now();
+    try {
+      const prompt = cleanString(req.body?.prompt, 12000);
+      if (!prompt) return sendResult(res, req, started, 400, { status: false, error: 'prompt is required' });
+      const result = await aiChat(prompt, cleanString(req.body?.model || 'default', 100));
+      return sendResult(res, req, started, 200, { status: true, result });
+    } catch (err) { next(err); }
+  });
 
   app.get('/api', (_req, res) => res.json({
   status: true,
@@ -354,7 +333,9 @@ async function main() {
   api: '/v1',
   endpoints: [
     '/v1/info',
-    ...DYNAMIC_ENDPOINTS.map(x => x.path)
+    '/v1/search/youtube',
+    '/v1/tools/translate',
+    '/v1/ai/chat'
   ]
 }));
 
@@ -368,7 +349,9 @@ app.get('/api/', (_req, res) => res.json({
   api: '/v1',
   endpoints: [
     '/v1/info',
-    ...DYNAMIC_ENDPOINTS.map(x => x.path)
+    '/v1/search/youtube',
+    '/v1/tools/translate',
+    '/v1/ai/chat'
   ]
 }));
 
@@ -402,15 +385,7 @@ app.get('/api/', (_req, res) => res.json({
   });
 
 
-  const sendConsole = (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
-  };
-  app.get('/', sendConsole);
-  app.get('/login', sendConsole);
-  app.get('/dashboard', sendConsole);
+  app.get('/dashboard', (_req,res)=>res.sendFile(path.join(__dirname,'public','dashboard.html')));
 
   app.post('/auth/register', async (req,res,next)=>{
     if(!requireSameOrigin(req)) return res.status(403).json({status:false,error:'Invalid request origin.'});
@@ -419,25 +394,20 @@ app.get('/api/', (_req, res) => res.json({
       const email=validEmail(req.body?.email); const password=String(req.body?.password||'');
       if(!email) return res.status(400).json({status:false,error:'A valid email is required.'});
       if(!passwordValid(password)) return res.status(400).json({status:false,error:'Password must be 8-200 characters.'});
-      if(EMAIL_VERIFICATION_REQUIRED && !emailVerificationConfigured()) {
-        return res.status(503).json({status:false,error:'Email verification is not configured on this server. Add RESEND_API_KEY in Railway Variables. The public Railway domain is detected automatically.'});
-      }
-      const existing=await pool.query('SELECT id,email_verified FROM users WHERE email=$1 LIMIT 1',[email]);
-      if(existing.rowCount) {
-        if(!existing.rows[0].email_verified) return res.status(409).json({status:false,code:'EMAIL_NOT_VERIFIED',error:'This account exists but its email is not verified. Use Resend verification email.'});
-        return res.status(409).json({status:false,error:'An account with that email already exists.'});
-      }
+      const existing=await pool.query('SELECT id FROM users WHERE email=$1 LIMIT 1',[email]);
+      if(existing.rowCount) return res.status(409).json({status:false,error:'An account with that email already exists.'});
       const hash=await bcrypt.hash(password,12);
-      const created=await pool.query(
-        'INSERT INTO users(email,name,password_hash,email_verified) VALUES($1,$2,$3,$4) RETURNING id,email,name,email_verified',
-        [email,name,hash,!EMAIL_VERIFICATION_REQUIRED]
-      );
-      if(EMAIL_VERIFICATION_REQUIRED) {
-        await issueEmailVerification(created.rows[0].id, created.rows[0].email, created.rows[0].name);
-        return res.status(201).json({status:true,verificationRequired:true,message:'Account created. Check your email for the verification link.',user:{id:created.rows[0].id,email:created.rows[0].email,name:created.rows[0].name,emailVerified:false}});
-      }
-      const raw=await createSession(created.rows[0].id); res.setHeader('Set-Cookie',sessionCookie(raw));
-      res.status(201).json({status:true,verificationRequired:false,user:created.rows[0]});
+      const client=await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const created=await client.query('INSERT INTO users(email,name,password_hash,email_verified,free_key_issued_at) VALUES($1,$2,$3,true,NOW()) RETURNING id,email,name,email_verified',[email,name,hash]);
+        const userId=created.rows[0].id;
+        const raw=randomKey('zuko_live');
+        const key=await client.query("INSERT INTO api_keys(name,key_hash,key_prefix,owner_user_id,plan) VALUES($1,$2,$3,$4,'free') RETURNING id,name,key_prefix,plan,active,created_at",[`user:${userId}:Free`,sha256(raw),raw.slice(0,17),userId]);
+        await client.query('COMMIT');
+        const session=await createSession(userId); res.setHeader('Set-Cookie',sessionCookie(session));
+        return res.status(201).json({status:true,user:created.rows[0],key:raw,record:key.rows[0]});
+      } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
     }catch(e){next(e);}
   });
 
@@ -448,79 +418,19 @@ app.get('/api/', (_req, res) => res.json({
       if(!email||!password) return res.status(400).json({status:false,error:'Email and password are required.'});
       const result=await pool.query('SELECT * FROM users WHERE email=$1 LIMIT 1',[email]); const user=result.rows[0];
       if(!user||!user.password_hash||!(await bcrypt.compare(password,user.password_hash))) return res.status(401).json({status:false,error:'Invalid email or password.'});
-      if(EMAIL_VERIFICATION_REQUIRED && !user.email_verified) {
-        return res.status(403).json({status:false,code:'EMAIL_NOT_VERIFIED',error:'Please verify your email before signing in.',email:user.email});
-      }
       await pool.query('UPDATE users SET last_login_at=NOW() WHERE id=$1',[user.id]);
       const raw=await createSession(user.id); res.setHeader('Set-Cookie',sessionCookie(raw));
       res.json({status:true,user:{id:user.id,email:user.email,name:user.name,avatar:user.avatar,emailVerified:user.email_verified}});
     }catch(e){next(e);}
   });
 
-  app.get('/auth/verify', (req,res)=>{
-    const token=cleanString(req.query?.token,128);
-    if(!token) return res.status(400).send('<h2>Invalid verification link</h2><p>The verification token is missing.</p>');
-    const escaped=token.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    res.type('html').send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZUKO API — Verify email</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070a12;color:#f4f7fb;font-family:Arial,sans-serif}.box{width:min(460px,calc(100% - 40px));padding:28px;border:1px solid #20283a;border-radius:16px;background:#0d111c;box-sizing:border-box}button{width:100%;padding:12px;border:0;border-radius:9px;background:#7c3aed;color:#fff;font-weight:700;font-size:15px}p{color:#8c98aa;line-height:1.6}.msg{margin-top:14px}</style></head><body><main class="box"><h1>Verify your ZUKO email</h1><p>Click the button below to activate your developer account.</p><button id="b">Verify email address</button><div id="m" class="msg"></div><script>const t=${JSON.stringify(token)};document.getElementById('b').onclick=async()=>{const m=document.getElementById('m');const b=document.getElementById('b');b.disabled=true;b.textContent='Verifying…';try{const r=await fetch('/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})});const d=await r.json();if(!r.ok)throw Error(d.error||'Verification failed');m.textContent='Email verified successfully. Redirecting…';setTimeout(()=>location.href='/dashboard?verified=1',700)}catch(e){m.textContent=e.message;b.disabled=false;b.textContent='Try again'}};</script></main></body></html>`);
-  });
-
-  app.post('/auth/verify', async (req,res,next)=>{
-    if(!requireSameOrigin(req)) return res.status(403).json({status:false,error:'Invalid request origin.'});
-    try {
-      const token=cleanString(req.body?.token,128);
-      if(!token) return res.status(400).json({status:false,error:'Verification token is required.'});
-      const r=await pool.query(
-        `SELECT id,email,name,avatar,email_verified,email_verification_expires_at
-           FROM users
-          WHERE email_verification_token_hash=$1
-          LIMIT 1`,
-        [sha256(token)]
-      );
-      const user=r.rows[0];
-      if(!user) return res.status(400).json({status:false,error:'Invalid or already-used verification link.'});
-      if(user.email_verified) return res.status(400).json({status:false,error:'Email is already verified.'});
-      if(!user.email_verification_expires_at || new Date(user.email_verification_expires_at).getTime() < Date.now()) {
-        return res.status(400).json({status:false,error:'This verification link has expired. Request a new one.'});
-      }
-      await pool.query(
-        `UPDATE users
-            SET email_verified=true,
-                email_verification_token_hash=NULL,
-                email_verification_expires_at=NULL
-          WHERE id=$1`,
-        [user.id]
-      );
-      const raw=await createSession(user.id);
-      res.setHeader('Set-Cookie',sessionCookie(raw));
-      res.json({status:true,message:'Email verified successfully.',user:{id:user.id,email:user.email,name:user.name,avatar:user.avatar,emailVerified:true}});
-    } catch(e){next(e);}
-  });
-
-  app.post('/auth/resend-verification', async (req,res,next)=>{
-    if(!requireSameOrigin(req)) return res.status(403).json({status:false,error:'Invalid request origin.'});
-    try {
-      const email=validEmail(req.body?.email);
-      if(!email) return res.status(400).json({status:false,error:'A valid email is required.'});
-      const r=await pool.query('SELECT id,email,name,email_verified FROM users WHERE email=$1 LIMIT 1',[email]);
-      const generic={status:true,message:'If that account exists and is not verified, a new verification email has been sent.'};
-      if(!r.rowCount || r.rows[0].email_verified) return res.json(generic);
-      await issueEmailVerification(r.rows[0].id,r.rows[0].email,r.rows[0].name);
-      res.json(generic);
-    } catch(e){next(e);}
-  });
-
   app.get('/auth/me', async (req,res,next)=>{ try{ const user=await currentUser(req); if(!user)return res.json({status:true,authenticated:false}); res.json({status:true,authenticated:true,user:{id:user.id,email:user.email,name:user.name,avatar:user.avatar,emailVerified:user.email_verified}}); }catch(e){next(e);} });
 
   app.post('/auth/logout', async (req,res,next)=>{ try{ const raw=req.cookies?.zuko_session; if(raw) await pool.query('DELETE FROM user_sessions WHERE token_hash=$1',[sha256(raw)]); res.setHeader('Set-Cookie','zuko_session=; HttpOnly; SameSite=Lax; Max-Age=0; Path=/'); res.json({status:true}); }catch(e){next(e);} });
   app.get('/api/ping', (_req,res)=>res.json({status:true,message:'ZUKO API is alive ⚡',time:nowIso()}));
+  app.get(`${API_PREFIX}/tools/ping`, (req,res)=>sendResult(res,req,Date.now(),200,{status:true,message:'pong',service:API_NAME,time:nowIso(),plan:req.apiKey.plan}));
   app.get('/dashboard/api/profile', userOnly, async (req,res,next)=>{try{const keys=await pool.query('SELECT id,name,key_prefix,plan,active,created_at,last_used_at FROM api_keys WHERE owner_user_id=$1 ORDER BY id DESC',[req.user.id]);const subscription=await getUserSubscription(req.user.id);res.json({status:true,user:{id:req.user.id,email:req.user.email,name:req.user.name,avatar:req.user.avatar,emailVerified:req.user.email_verified},subscription:subscription?{plan:subscription.plan,status:subscription.status,expiresAt:subscription.expires_at}:null,keys:keys.rows,plans:PLANS,payment:{method:PAYMENT_METHOD,accountNumber:PAYMENT_ACCOUNT_NUMBER,accountName:PAYMENT_ACCOUNT_NAME}});}catch(e){next(e);}});
   app.get('/dashboard/api/payments', userOnly, async (req,res,next)=>{try{const r=await pool.query('SELECT reference,plan,amount,currency,status,note,submitted_at,reviewed_at,rejection_reason FROM payments WHERE user_id=$1 ORDER BY id DESC LIMIT 50',[req.user.id]);res.json({status:true,payments:r.rows});}catch(e){next(e);}});
-  app.get('/dashboard/api/endpoints', userOnly, async (req,res,next)=>{try{
-    const r=await pool.query('SELECT name,method,path,category,description,enabled FROM endpoint_configs WHERE enabled=true ORDER BY category,name');
-    const custom=r.rows;
-    const merged=[...BUILTIN_ENDPOINTS,...DYNAMIC_ENDPOINTS,...custom].filter((x,i,a)=>a.findIndex(y=>y.path===x.path && y.method===x.method)===i);
-    res.json({status:true,endpoints:merged});
-  }catch(e){next(e);}});
   app.post('/dashboard/api/payments', userOnly, async (req,res,next)=>{try{const plan=cleanString(req.body?.plan||'',30).toLowerCase();const note=cleanString(req.body?.note||'',500);if(!PLANS[plan]||plan==='free')return res.status(400).json({status:false,error:'Choose a paid plan.'});const ref=paymentReference();const r=await pool.query(
   `INSERT INTO payments
     (reference,user_id,plan,amount,note)
@@ -539,18 +449,35 @@ res.status(201).json({
     reference:ref
   }
 });}catch(e){next(e);}});
-  app.post('/dashboard/api/keys', userOnly, async (req,res,next)=>{try{const name=cleanString(req.body?.name||'My App',100);const plan=await effectivePlanForUser(req.user.id);const raw=randomKey('zuko_live');const r=await pool.query('INSERT INTO api_keys(name,key_hash,key_prefix,owner_user_id,plan) VALUES($1,$2,$3,$4,$5) RETURNING id,name,key_prefix,plan,active,created_at',[`user:${req.user.id}:${name}`,sha256(raw),raw.slice(0,17),req.user.id,plan]);res.status(201).json({status:true,key:raw,record:r.rows[0]});}catch(e){next(e);}});
-  app.post('/dashboard/api/keys/:id/revoke', userOnly, async (req,res,next)=>{try{const r=await pool.query('UPDATE api_keys SET active=false,revoked_at=NOW() WHERE id=$1 AND owner_user_id=$2 RETURNING id',[req.params.id,req.user.id]);if(!r.rowCount)return res.status(404).json({status:false,error:'Key not found.'});res.json({status:true});}catch(e){next(e);}});
+  app.post('/dashboard/api/keys', userOnly, async (req,res,next)=>{try{
+    const name=cleanString(req.body?.name||'My App',100);
+    const plan=await effectivePlanForUser(req.user.id);
+    if(plan==='free'){
+      const existing=await pool.query("SELECT id,active,created_at FROM api_keys WHERE owner_user_id=$1 AND plan='free' LIMIT 1",[req.user.id]);
+      if(existing.rowCount) return res.status(409).json({status:false,error:'Your free API key has already been issued. It cannot be regenerated. Upgrade to a paid plan for another key.',upgradeRequired:true,plan:'free'});
+      const issued=await pool.query('SELECT free_key_issued_at FROM users WHERE id=$1',[req.user.id]);
+      if(issued.rows[0]?.free_key_issued_at) return res.status(409).json({status:false,error:'Your one-time free API key has already been issued and cannot be regenerated.',upgradeRequired:true,plan:'free'});
+    }
+    const raw=randomKey('zuko_live');
+    const r=await pool.query('INSERT INTO api_keys(name,key_hash,key_prefix,owner_user_id,plan) VALUES($1,$2,$3,$4,$5) RETURNING id,name,key_prefix,plan,active,created_at',[`user:${req.user.id}:${name}`,sha256(raw),raw.slice(0,17),req.user.id,plan]);
+    if(plan==='free') await pool.query('UPDATE users SET free_key_issued_at=COALESCE(free_key_issued_at,NOW()) WHERE id=$1',[req.user.id]);
+    res.status(201).json({status:true,key:raw,record:r.rows[0]});
+  }catch(e){next(e);}});
+  app.post('/dashboard/api/keys/:id/revoke', userOnly, async (req,res,next)=>{try{
+    const key=(await pool.query('SELECT id,plan FROM api_keys WHERE id=$1 AND owner_user_id=$2',[req.params.id,req.user.id])).rows[0];
+    if(!key)return res.status(404).json({status:false,error:'Key not found.'});
+    if(key.plan==='free') return res.status(403).json({status:false,error:'The free API key cannot be revoked. When its quota is exhausted, upgrade to a paid plan.',upgradeRequired:true,plan:'free'});
+    const r=await pool.query('UPDATE api_keys SET active=false,revoked_at=NOW() WHERE id=$1 AND owner_user_id=$2 RETURNING id',[req.params.id,req.user.id]);
+    res.json({status:true});
+  }catch(e){next(e);}});
 
   app.get('/docs', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'docs.html')));
   app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
   app.post('/admin/api/login', (req, res) => {
     const supplied = Buffer.from(String(req.body?.password || '')); const expected = Buffer.from(ADMIN_PASSWORD); if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return res.status(401).json({ status: false, error: 'Invalid credentials.' });
-    const token = makeAdminToken();
-    res.setHeader('Set-Cookie', `zuko_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; ${process.env.NODE_ENV === 'production' ? 'Secure; ' : ''}Max-Age=43200; Path=/`);
-    // Return the same short-lived token as a header-auth fallback. This avoids browser/proxy cookie issues on hosted deployments.
-    res.json({ status: true, token, expiresIn: 43200 });
+    res.setHeader('Set-Cookie', `zuko_admin=${encodeURIComponent(makeAdminToken())}; HttpOnly; SameSite=Strict; ${process.env.NODE_ENV === 'production' ? 'Secure; ' : ''}Max-Age=43200; Path=/`);
+    res.json({ status: true });
   });
 
   function adminOnly(req, res, next) {
@@ -605,8 +532,7 @@ res.status(201).json({
     catch (err) { next(err); }
   });
 
-  app.get('/admin/api/payments', adminOnly, async (_req,res,next)=>{try{const r=await pool.query(`SELECT p.*,u.email,u.name FROM payments p LEFT JOIN users u ON u.id=p.user_id ORDER BY CASE WHEN p.status='pending' THEN 0 ELSE 1 END, p.id DESC LIMIT 500`);res.json({status:true,payments:r.rows});}catch(e){next(e);}});
-  app.get('/admin/api/upgrade-requests', adminOnly, async (_req,res,next)=>{try{const r=await pool.query(`SELECT p.reference,p.user_id,p.plan,p.amount,p.currency,p.status,p.note,p.submitted_at,u.email,u.name FROM payments p LEFT JOIN users u ON u.id=p.user_id WHERE p.status='pending' ORDER BY p.submitted_at ASC LIMIT 500`);res.json({status:true,requests:r.rows});}catch(e){next(e);}});
+  app.get('/admin/api/payments', adminOnly, async (_req,res,next)=>{try{const r=await pool.query(`SELECT p.*,u.email,u.name FROM payments p LEFT JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 500`);res.json({status:true,payments:r.rows});}catch(e){next(e);}});
   app.post('/admin/api/payments/:reference/approve', adminOnly, async (req,res,next)=>{const client=await pool.connect();try{await client.query('BEGIN');const p=(await client.query('SELECT * FROM payments WHERE reference=$1 FOR UPDATE',[req.params.reference])).rows[0];if(!p)return res.status(404).json({status:false,error:'Payment not found.'});if(p.status!=='pending')return res.status(409).json({status:false,error:`Payment is already ${p.status}.`});const days=PLANS[p.plan]?.durationDays||30;const current=(await client.query(`SELECT expires_at FROM subscriptions WHERE user_id=$1 AND status='active' AND expires_at>NOW() ORDER BY expires_at DESC LIMIT 1`,[p.user_id])).rows[0];const base=current?.expires_at?new Date(current.expires_at):new Date();const start=new Date();const expiry=new Date(Math.max(base.getTime(),start.getTime())+days*86400000);await client.query(`UPDATE subscriptions SET status='expired',updated_at=NOW() WHERE user_id=$1 AND status='active'`,[p.user_id]);await client.query(`INSERT INTO subscriptions(user_id,plan,status,started_at,expires_at) VALUES($1,$2,'active',$3,$4)`,[p.user_id,p.plan,start,expiry]);await client.query(`UPDATE api_keys SET plan=$2 WHERE owner_user_id=$1 AND active=true`,[p.user_id,p.plan]);await client.query(`UPDATE payments SET status='approved',reviewed_at=NOW(),reviewed_by=$2 WHERE reference=$1`,[p.reference,BILLING_ADMIN_NUMBER||'admin']);await client.query('COMMIT');res.json({status:true,reference:p.reference,plan:p.plan,expiresAt:expiry});}catch(e){await client.query('ROLLBACK');next(e);}finally{client.release();}});
   app.post('/admin/api/payments/:reference/reject', adminOnly, async (req,res,next)=>{try{const reason=cleanString(req.body?.reason||'Payment not received',300);const r=await pool.query(`UPDATE payments SET status='rejected',reviewed_at=NOW(),reviewed_by=$2,rejection_reason=$3 WHERE reference=$1 AND status='pending' RETURNING reference`,[req.params.reference,BILLING_ADMIN_NUMBER||'admin',reason]);if(!r.rowCount)return res.status(404).json({status:false,error:'Pending payment not found.'});res.json({status:true});}catch(e){next(e);}});
   app.get('/admin/api/billing', adminOnly, async (_req,res,next)=>{try{const [rev,pending,active,expired]=await Promise.all([pool.query(`SELECT COALESCE(SUM(amount),0)::numeric total FROM payments WHERE status='approved'`),pool.query(`SELECT COUNT(*)::int count FROM payments WHERE status='pending'`),pool.query(`SELECT COUNT(*)::int count FROM subscriptions WHERE status='active' AND expires_at>NOW()`),pool.query(`SELECT COUNT(*)::int count FROM subscriptions WHERE expires_at<=NOW()`)]);res.json({status:true,revenue:Number(rev.rows[0].total),pending:Number(pending.rows[0].count),activeSubscriptions:Number(active.rows[0].count),expiredSubscriptions:Number(expired.rows[0].count),plans:PLANS,paymentMethod:PAYMENT_METHOD});}catch(e){next(e);}});
@@ -622,7 +548,24 @@ res.status(201).json({
     res.status(500).json({ status: false, error: process.env.NODE_ENV === 'production' ? 'Internal server error.' : (err.message || 'Internal server error.') });
   });
 
-  app.listen(PORT, '0.0.0.0', () => console.log(`${API_NAME} ${API_VERSION} listening on :${PORT}`));
+  const server = app.listen(PORT, '0.0.0.0', () => console.log(`${API_NAME} ${API_VERSION} listening on :${PORT}`));
+  server.keepAliveTimeout = Number(process.env.HTTP_KEEP_ALIVE_TIMEOUT_MS || 65000);
+  server.headersTimeout = Number(process.env.HTTP_HEADERS_TIMEOUT_MS || 66000);
+  server.requestTimeout = Number(process.env.HTTP_REQUEST_TIMEOUT_MS || 0);
+
+  let shuttingDown = false;
+  const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[shutdown] received ${signal}`);
+    server.close(async () => {
+      try { await pool.end(); } catch (err) { console.error('[shutdown] postgres close failed:', err?.stack || err); }
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  process.once('SIGINT', () => void shutdown('SIGINT'));
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
