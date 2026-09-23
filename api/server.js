@@ -10,7 +10,6 @@ const axios = require('axios');
 const { Pool } = require('pg');
 const yts = require('yt-search');
 const bcrypt = require('bcryptjs');
-const { mountEndpoints } = require('./endpoint-loader');
 
 const PORT = Number(process.env.PORT || 3000);
 const API_PREFIX = '/v1';
@@ -51,7 +50,6 @@ if (!ADMIN_PASSWORD) throw new Error('ZUKO_ADMIN_PASSWORD is required.');
 if (!ADMIN_SECRET || ADMIN_SECRET.length < 32) throw new Error('ZUKO_ADMIN_SECRET must be at least 32 characters.');
 
 const pool = new Pool({ connectionString: DATABASE_URL, max: 10, idleTimeoutMillis: 30000, connectionTimeoutMillis: 10000, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
-pool.on('error', (err) => console.error('[postgres] idle client error:', err?.stack || err));
 
 const PLANS = Object.freeze({
   free: { daily: 100, price: 0, durationDays: 0 },
@@ -288,19 +286,6 @@ async function main() {
   app.get('/readyz', async (_req, res) => { try { await pool.query('SELECT 1'); res.json({ status: true }); } catch { res.status(503).json({ status: false }); } });
 
   app.use(`${API_PREFIX}/`, requireApiKey);
-
-  // Mount modular endpoints (including /v1/ytmp3 and /v1/ytmp4) after API-key auth.
-  const loadedEndpoints = mountEndpoints(app, {
-    API_PREFIX,
-    sendResult,
-    recordRequest,
-    cleanString,
-    nowIso,
-    axios,
-    yts,
-    pool
-  });
-  console.log(`[endpoints] mounted ${loadedEndpoints.length} modular endpoints`);
 
   app.get(`${API_PREFIX}/info`, (req, res) => sendResult(res, req, Date.now(), 200, { status: true, name: API_NAME, version: API_VERSION, plan: req.apiKey.plan, quota: req.usage }));
 
@@ -562,24 +547,7 @@ res.status(201).json({
     res.status(500).json({ status: false, error: process.env.NODE_ENV === 'production' ? 'Internal server error.' : (err.message || 'Internal server error.') });
   });
 
-  const server = app.listen(PORT, '0.0.0.0', () => console.log(`${API_NAME} ${API_VERSION} listening on :${PORT}`));
-  server.keepAliveTimeout = Number(process.env.HTTP_KEEP_ALIVE_TIMEOUT_MS || 65000);
-  server.headersTimeout = Number(process.env.HTTP_HEADERS_TIMEOUT_MS || 66000);
-  server.requestTimeout = Number(process.env.HTTP_REQUEST_TIMEOUT_MS || 0);
-
-  let shuttingDown = false;
-  const shutdown = async (signal) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    console.log(`[shutdown] received ${signal}`);
-    server.close(async () => {
-      try { await pool.end(); } catch (err) { console.error('[shutdown] postgres close failed:', err?.stack || err); }
-      process.exit(0);
-    });
-    setTimeout(() => process.exit(1), 10000).unref();
-  };
-  process.once('SIGTERM', () => void shutdown('SIGTERM'));
-  process.once('SIGINT', () => void shutdown('SIGINT'));
+  app.listen(PORT, '0.0.0.0', () => console.log(`${API_NAME} ${API_VERSION} listening on :${PORT}`));
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

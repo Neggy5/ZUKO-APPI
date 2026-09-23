@@ -9,7 +9,8 @@ RUN apt-get update \
   && git clone --depth 1 --branch 2.0.0 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil-ytdlp-pot-provider \
   && cd /opt/bgutil-ytdlp-pot-provider/server \
   && npm ci --no-audit --no-fund \
-  && npx tsc \
+  && (test -x node_modules/.bin/tsc || npm install --no-save --no-package-lock typescript@5.9.3) \
+  && node_modules/.bin/tsc \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
