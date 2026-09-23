@@ -17,10 +17,12 @@ RUN apt-get update \
 COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY . ./
+
 ENV NODE_ENV=production
 ENV YTDLP_MAX_FILE_BYTES=104857600
 ENV YTDLP_IMPERSONATE=Chrome-131:Android-14
 ENV YTDLP_JS_RUNTIMES=node
 ENV YTDLP_POT_URL=http://127.0.0.1:4416
+
 EXPOSE 3000
-CMD ["sh", "-c", "node /opt/bgutil-ytdlp-pot-provider/server/build/main.js --host 127.0.0.1 --port 4416 & exec node server.js"]
+CMD ["/app/start.sh"]
