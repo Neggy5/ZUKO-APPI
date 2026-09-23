@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const dns = require('dns').promises;
 const net = require('net');
 
-const YTDLP_BIN = process.env.YTDLP_BIN || 'yt-dlp';
+const YTDLP_BIN = process.env.YTDLP_BIN || '/usr/local/bin/yt-dlp';
 const MAX_FILE_BYTES = Number(process.env.YTDLP_MAX_FILE_BYTES || 100 * 1024 * 1024);
 const TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS || 120000);
 const IMPERSONATE_TARGET = String(process.env.YTDLP_IMPERSONATE || 'Chrome-131:Android-14').trim();
@@ -95,7 +95,7 @@ function run(args, { cwd, timeoutMs = TIMEOUT_MS } = {}) {
 
 async function ensureTool() {
   try { const { stdout } = await run(['--version'], { timeoutMs: 10000 }); return stdout.trim(); }
-  catch { throw new Error('yt-dlp is not installed or is not executable on this server.'); }
+  catch (error) { throw new Error(`yt-dlp is unavailable (${YTDLP_BIN}): ${error.message}`); }
 }
 
 async function inspect(rawUrl, mode = 'info') {
