@@ -1,7 +1,6 @@
 'use strict';
 
-const { download: scraperDownload, MAX_FILE_BYTES } = require('../lib/youtube-scraper');
-const { download: ytDlpDownload } = require('../lib/ytdlp');
+const { download, MAX_FILE_BYTES } = require('../lib/youtube-scraper');
 
 module.exports = {
   name: 'YouTube MP3',
@@ -12,12 +11,7 @@ module.exports = {
   async execute({ query, res }) {
     if (!query.url) return { statusCode: 400, data: { status: false, error: 'url is required' } };
     try {
-      let job;
-      try { job = await scraperDownload(query.url, 'audio'); }
-      catch (scraperError) {
-        console.warn('[ytmp3] external scraper failed, falling back to local yt-dlp:', scraperError.message);
-        job = await ytDlpDownload(query.url, 'audio');
-      }
+      const job = await download(query.url, 'audio');
       if (!job.size || job.size <= 0) throw Object.assign(new Error('Downloaded media file is empty or corrupted.'), { statusCode: 502 });
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Content-Disposition', `attachment; filename="${job.filename.replace(/[^\w. -]/g, '_')}"`);
