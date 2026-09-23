@@ -4,8 +4,10 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 python3-venv ffmpeg ca-certificates git \
   && python3 -m venv /opt/yt-dlp-venv \
-  && /opt/yt-dlp-venv/bin/pip install --no-cache-dir -U pip "yt-dlp[default]" "yt-dlp-ejs" "curl-cffi>=0.11" "bgutil-ytdlp-pot-provider" \
-  && ln -s /opt/yt-dlp-venv/bin/yt-dlp /usr/local/bin/yt-dlp \
+  && /opt/yt-dlp-venv/bin/pip install --no-cache-dir -U pip "yt-dlp[default]" "yt-dlp-ejs" "curl-cffi>=0.11" \
+  && ln -sf /opt/yt-dlp-venv/bin/yt-dlp /usr/local/bin/yt-dlp \
+  && test -x /usr/local/bin/yt-dlp \
+  && /usr/local/bin/yt-dlp --version \
   && git clone --depth 1 --branch 2.0.0 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil-ytdlp-pot-provider \
   && cd /opt/bgutil-ytdlp-pot-provider/server \
   && npm ci --no-audit --no-fund \
@@ -17,12 +19,13 @@ RUN apt-get update \
 COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY . ./
-
 ENV NODE_ENV=production
+ENV YTDLP_BIN=/usr/local/bin/yt-dlp
 ENV YTDLP_MAX_FILE_BYTES=104857600
+ENV YTDLP_TIMEOUT_MS=120000
 ENV YTDLP_IMPERSONATE=Chrome-131:Android-14
 ENV YTDLP_JS_RUNTIMES=node
 ENV YTDLP_POT_URL=http://127.0.0.1:4416
-
+ENV YTDLP_YOUTUBE_CLIENTS=mweb
 EXPOSE 3000
-CMD ["/app/start.sh"]
+CMD ["sh", "-c", "node /opt/bgutil-ytdlp-pot-provider/server/build/main.js --host 127.0.0.1 --port 4416 & exec node server.js"]
