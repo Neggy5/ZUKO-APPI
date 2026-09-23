@@ -10,6 +10,7 @@ const axios = require('axios');
 const { Pool } = require('pg');
 const yts = require('yt-search');
 const bcrypt = require('bcryptjs');
+const { mountEndpoints } = require('./endpoint-loader');
 
 const PORT = Number(process.env.PORT || 3000);
 const API_PREFIX = '/v1';
@@ -287,6 +288,19 @@ async function main() {
   app.get('/readyz', async (_req, res) => { try { await pool.query('SELECT 1'); res.json({ status: true }); } catch { res.status(503).json({ status: false }); } });
 
   app.use(`${API_PREFIX}/`, requireApiKey);
+
+  // Mount modular endpoints (including /v1/ytmp3 and /v1/ytmp4) after API-key auth.
+  const loadedEndpoints = mountEndpoints(app, {
+    API_PREFIX,
+    sendResult,
+    recordRequest,
+    cleanString,
+    nowIso,
+    axios,
+    yts,
+    pool
+  });
+  console.log(`[endpoints] mounted ${loadedEndpoints.length} modular endpoints`);
 
   app.get(`${API_PREFIX}/info`, (req, res) => sendResult(res, req, Date.now(), 200, { status: true, name: API_NAME, version: API_VERSION, plan: req.apiKey.plan, quota: req.usage }));
 
