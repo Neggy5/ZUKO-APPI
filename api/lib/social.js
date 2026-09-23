@@ -45,9 +45,20 @@ function detectPlatform(rawUrl) {
 }
 
 function normalizeUrl(rawUrl) {
-  const url = new URL(String(rawUrl || '').trim());
-  // Resolve common mobile/share redirects without changing the public API contract.
+  const value = String(rawUrl || '').trim();
+  const url = new URL(value);
   url.hash = '';
+
+  // TikTok share links sometimes contain tracking parameters that can confuse
+  // extractors. Keep only the canonical path and useful query parameters.
+  const host = url.hostname.toLowerCase();
+  if (/(^|\\.)tiktok\\.com$/.test(host)) {
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(?:_t|_r|checksum|u_code|lang|sec_uid|share_app_id|share_item_id)$/i.test(key)) {
+        url.searchParams.delete(key);
+      }
+    }
+  }
   return url.toString();
 }
 
