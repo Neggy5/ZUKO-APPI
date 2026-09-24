@@ -26,10 +26,15 @@ const API_IP_LIMIT = Number(process.env.API_IP_LIMIT || 180);
 const API_KEY_WINDOW_MS = Number(process.env.API_KEY_WINDOW_MS || 60_000);
 const API_KEY_LIMIT = Number(process.env.API_KEY_LIMIT || 120);
 const MAX_CONCURRENT_PER_KEY = Number(process.env.MAX_CONCURRENT_PER_KEY || 8);
+const YT_VIDEO_CONCURRENCY_PER_KEY = Number(process.env.YT_VIDEO_CONCURRENCY_PER_KEY || 2);
+const YT_VIDEO_QUEUE_MAX_PER_KEY = Number(process.env.YT_VIDEO_QUEUE_MAX_PER_KEY || 24);
+const YT_VIDEO_QUEUE_TIMEOUT_MS = Number(process.env.YT_VIDEO_QUEUE_TIMEOUT_MS || 180000);
 const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 256 * 1024);
 const SCRAPER_BLOCK_THRESHOLD = Number(process.env.SCRAPER_BLOCK_THRESHOLD || 40);
 const suspiciousHits = new Map();
 const activeByKey = new Map();
+const ytVideoActiveByKey = new Map();
+const ytVideoQueuesByKey = new Map();
 
 function clientIp(req) { return String(req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, ''); }
 function noteSuspicious(req) {
@@ -40,6 +45,60 @@ function noteSuspicious(req) {
 function clearSuspicious(req) { const ip = clientIp(req); suspiciousHits.delete(ip); }
 function acquireKeySlot(keyId) { const n = activeByKey.get(keyId) || 0; if (n >= MAX_CONCURRENT_PER_KEY) return false; activeByKey.set(keyId, n + 1); return true; }
 function releaseKeySlot(keyId) { const n = activeByKey.get(keyId) || 0; if (n <= 1) activeByKey.delete(keyId); else activeByKey.set(keyId, n - 1); }
+function isYoutubeVideoRoute(pathname) {
+  return pathname === '/v1/ytmp4' || pathname === '/v1/download/video' || pathname === '/v1/download/ytmp4';
+}
+function releaseYoutubeVideoSlot(keyId) {
+  const active = ytVideoActiveByKey.get(keyId) || 0;
+  if (active > 0) ytVideoActiveByKey.set(keyId, active - 1);
+  const queue = ytVideoQueuesByKey.get(keyId);
+  if (!queue || !queue.length) {
+    if ((ytVideoActiveByKey.get(keyId) || 0) === 0) ytVideoActiveByKey.delete(keyId);
+    return;
+  }
+  while (queue.length) {
+    const item = queue.shift();
+    if (item.cancelled) continue;
+    clearTimeout(item.timer);
+    ytVideoActiveByKey.set(keyId, (ytVideoActiveByKey.get(keyId) || 0) + 1);
+    item.resolve(true);
+    return;
+  }
+  ytVideoQueuesByKey.delete(keyId);
+}
+function acquireYoutubeVideoSlot(keyId, res) {
+  const active = ytVideoActiveByKey.get(keyId) || 0;
+  if (active < YT_VIDEO_CONCURRENCY_PER_KEY) {
+    ytVideoActiveByKey.set(keyId, active + 1);
+    return Promise.resolve(true);
+  }
+  const queue = ytVideoQueuesByKey.get(keyId) || [];
+  if (queue.length >= YT_VIDEO_QUEUE_MAX_PER_KEY) return Promise.resolve(false);
+  return new Promise(resolve => {
+    const item = { resolve, cancelled: false, timer: null, onClose: null };
+    item.timer = setTimeout(() => {
+      item.cancelled = true;
+      const q = ytVideoQueuesByKey.get(keyId) || [];
+      const i = q.indexOf(item);
+      if (i >= 0) q.splice(i, 1);
+      if (!q.length) ytVideoQueuesByKey.delete(keyId);
+      item.resolve(false);
+    }, YT_VIDEO_QUEUE_TIMEOUT_MS);
+    item.onClose = () => {
+      if (item.cancelled) return;
+      item.cancelled = true;
+      clearTimeout(item.timer);
+      const q = ytVideoQueuesByKey.get(keyId) || [];
+      const i = q.indexOf(item);
+      if (i >= 0) q.splice(i, 1);
+      if (!q.length) ytVideoQueuesByKey.delete(keyId);
+      item.resolve(false);
+    };
+    res.once('close', item.onClose);
+    queue.push(item);
+    ytVideoQueuesByKey.set(keyId, queue);
+  });
+}
 function isLikelyScraper(req) {
   const ua = String(req.get('user-agent') || '').toLowerCase();
   if (!ua) return true;
@@ -205,8 +264,34 @@ async function requireApiKey(req, res, next) {
     const keyLimiter = req.app.locals.keyLimiter;
     const allowed = await keyLimiter.check(key.id);
     if (!allowed) return res.status(429).json({ status:false, error:'Per-key rate limit exceeded. Slow down and retry later.' });
-    if (!acquireKeySlot(key.id)) return res.status(429).json({ status:false, error:'Too many concurrent requests for this API key.' });
-    res.once('finish', () => releaseKeySlot(key.id));
+    const youtubeVideo = isYoutubeVideoRoute(req.path);
+    if (youtubeVideo) {
+      const granted = await acquireYoutubeVideoSlot(key.id, res);
+      if (!granted) return res.status(429).json({
+        status: false,
+        error: 'YouTube video queue is busy. Please retry shortly.',
+        retryAfterSeconds: Math.ceil(YT_VIDEO_QUEUE_TIMEOUT_MS / 1000),
+        queueLimit: YT_VIDEO_QUEUE_MAX_PER_KEY
+      });
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        releaseYoutubeVideoSlot(key.id);
+      };
+      res.once('finish', release);
+      res.once('close', release);
+    } else {
+      if (!acquireKeySlot(key.id)) return res.status(429).json({ status:false, error:'Too many concurrent requests for this API key.' });
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        releaseKeySlot(key.id);
+      };
+      res.once('finish', release);
+      res.once('close', release);
+    }
     const plan = PLANS[key.plan] || PLANS.free;
     const usage = await pool.query('SELECT requests FROM usage_daily WHERE api_key_id=$1 AND usage_date=$2', [key.id, dayKey()]);
     const used = Number(usage.rows[0]?.requests || 0);
