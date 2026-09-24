@@ -5,35 +5,7 @@ const https = require('https');
 const http = require('http');
 const dns = require('dns');
 try { dns.setDefaultResultOrder('ipv4first'); } catch (_) {}
-const { inspect } = require('../lib/ytdlp');
 const savetube = require('../lib/savetube');
-
-const YTDLP_DEADLINE_MS = Number(process.env.YT_VIDEO_YTDLP_INSPECT_TIMEOUT_MS || 20000);
-const TOTAL_DEADLINE_MS = Number(process.env.YT_VIDEO_RESOLVER_TIMEOUT_MS || 24000);
-const SAVE_TUBE_FALLBACK = String(process.env.SAVETUBE_VIDEO_FALLBACK || '0') === '1';
-
-function withDeadline(promise, ms, message) {
-  let timer;
-  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })])
-    .finally(() => clearTimeout(timer));
-}
-
-function pickProgressiveMp4(formats, requestedQuality) {
-  const maxHeight = Number(String(requestedQuality || '360').match(/^\d+$/)?.[0] || 360);
-  const candidates = (formats || [])
-    .filter(f => f && f.url && f.ext === 'mp4' && f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none')
-    .map(f => ({ ...f, height: Number(f.height || 0), tbr: Number(f.tbr || 0) }))
-    .filter(f => f.height > 0 && f.height <= maxHeight)
-    .sort((a,b) => b.height - a.height || b.tbr - a.tbr);
-  return candidates[0] || null;
-}
-
-async function ytdlpResolve(url, quality) {
-  const meta = await withDeadline(inspect(url, 'formats'), YTDLP_DEADLINE_MS, 'yt-dlp video resolver timed out.');
-  const format = pickProgressiveMp4(meta.formats, quality);
-  if (!format) throw new Error('yt-dlp found no compatible progressive MP4 format.');
-  return { title: meta.title || 'video', thumbnail: meta.thumbnail || null, duration: meta.duration || null, quality: String(format.height), format: 'mp4', download_url: format.url, source: 'ytdlp' };
-}
 
 function pipeUrl(urlStr, res) {
   return new Promise((resolve, reject) => {
@@ -51,30 +23,66 @@ function pipeUrl(urlStr, res) {
 }
 
 module.exports = {
-  name: 'YouTube MP4', method: 'GET', path: '/v1/ytmp4', category: 'Download',
-  description: 'YouTube → MP4 using yt-dlp with IPv4-first networking; optional Save-Tube fallback.',
+  name: 'YouTube MP4',
+  method: 'GET',
+  path: '/v1/ytmp4',
+  category: 'Download',
+  description: 'YouTube → MP4 via Save-Tube.',
+
   async execute({ query, res }) {
     const url = String(query.url || '').trim();
     if (!url) return { statusCode: 400, data: { status: false, error: 'url is required' } };
+
     const quality = query.quality || query.q || '360';
     const wantStream = String(query.stream || '') === '1' || String(query.mode || '') === 'stream';
-    let result; let lastError;
+
     try {
-      // yt-dlp is now the primary resolver. The previous Save-Tube-first path was
-      // the source of the Cloudflare IPv4/IPv6 connection failures seen on Railway.
-      result = await withDeadline(ytdlpResolve(url, quality), TOTAL_DEADLINE_MS, 'YouTube video resolver timed out.');
-    } catch (err) {
-      lastError = err;
-      if (SAVE_TUBE_FALLBACK) {
-        try { result = await withDeadline(savetube.resolve(url, 'video', quality), 7000, 'Save-Tube fallback timed out.'); }
-        catch (fallbackErr) { lastError = fallbackErr; }
+      // Save-Tube is the canonical video provider for ZUKO.
+      // Do not invoke yt-dlp for this endpoint unless explicitly enabled as a fallback.
+      const result = await savetube.resolve(url, 'video', quality);
+
+      if (!result || !result.download_url || !/^https?:\/\//i.test(result.download_url)) {
+        throw new Error('Save-Tube returned an invalid video download URL.');
       }
+
+      if (wantStream && res) {
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${(result.title || 'video').replace(/[^\w. -]/g, '_').slice(0, 80)}.mp4"`
+        );
+        res.setHeader('X-ZUKO-Source', 'savetube');
+        res.flushHeaders();
+        await pipeUrl(result.download_url, res);
+        return null;
+      }
+
+      return {
+        status: true,
+        success: true,
+        result: {
+          title: result.title,
+          thumbnail: result.thumbnail,
+          duration: result.duration,
+          quality: result.quality,
+          format: 'mp4',
+          download_url: result.download_url,
+          url: result.download_url,
+          source: 'savetube',
+        },
+      };
+    } catch (err) {
+      const statusCode = Number(err?.statusCode) || 502;
+      console.error('[ytmp4] Save-Tube failed:', err?.stack || err?.message || err);
+      return {
+        statusCode,
+        data: {
+          status: false,
+          error: err?.message || 'Save-Tube video download failed.',
+          source: 'zuko',
+          resolver: 'savetube',
+          retryable: statusCode >= 500 || statusCode === 429,
+        },
+      };
     }
-    if (!result) return { statusCode: 502, data: { status: false, error: lastError?.message || 'YouTube MP4 failed.', source: 'zuko', resolver: 'ytdlp', retryable: true } };
-    if (wantStream && res) {
-      res.setHeader('Content-Disposition', `attachment; filename="${(result.title || 'video').replace(/[^\w. -]/g, '_').slice(0,80)}.mp4"`);
-      res.setHeader('X-ZUKO-Source', result.source || 'ytdlp'); res.flushHeaders(); await pipeUrl(result.download_url, res); return null;
-    }
-    return { status: true, success: true, result: { title: result.title, thumbnail: result.thumbnail, duration: result.duration, quality: result.quality, format: 'mp4', download_url: result.download_url, url: result.download_url, source: result.source } };
-  }
+  },
 };
