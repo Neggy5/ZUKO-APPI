@@ -91,7 +91,7 @@ function socialRuntimeArgs(url) {
   // These are intentionally conservative: they improve browser-like requests without
   // attempting to bypass authentication, private content, DRM, or access controls.
   if (platform === 'instagram') args.push('--referer', 'https://www.instagram.com/');
-  if (platform === 'tiktok') args.push('--referer', 'https://www.tiktok.com/', '--add-header', 'Origin:https://www.tiktok.com', '--add-header', 'Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8');
+  if (platform === 'tiktok') args.push('--referer', 'https://www.tiktok.com/');
   if (platform === 'twitter') args.push('--referer', 'https://x.com/');
   if (platform === 'snapchat') args.push('--referer', 'https://www.snapchat.com/');
   if (platform === 'facebook') args.push('--referer', 'https://www.facebook.com/');
@@ -170,25 +170,8 @@ async function download(rawUrl, type, quality) {
     }
     const files = (await fs.readdir(dir)).filter(name => !name.endsWith('.part') && !name.endsWith('.ytdl'));
     if (!files.length) throw new Error('yt-dlp completed without producing a file.');
-    const filename = files[0];
-    const filepath = path.join(dir, filename);
-    const stat = await fs.stat(filepath);
+    const filename = files[0]; const filepath = path.join(dir, filename); const stat = await fs.stat(filepath);
     if (stat.size > MAX_FILE_BYTES) throw new Error('Downloaded file exceeds the configured size limit.');
-
-    // Never return an HTML challenge/error page as media. This is especially
-    // important for TikTok, which can occasionally answer with a webpage even
-    // when yt-dlp exits successfully.
-    const handle = await fs.open(filepath, 'r');
-    try {
-      const probe = Buffer.alloc(Math.min(4096, stat.size));
-      const { bytesRead } = await handle.read(probe, 0, probe.length, 0);
-      const head = probe.subarray(0, bytesRead).toString('utf8').trimStart().toLowerCase();
-      if (head.startsWith('<!doctype html') || head.startsWith('<html') || head.includes('<html')) {
-        throw new Error('TikTok returned an HTML page instead of media. The public post may be blocked or require a different extractor.');
-      }
-    } finally {
-      await handle.close();
-    }
     return { dir, filepath, filename, size: stat.size, cleanup: () => fs.rm(dir, { recursive:true, force:true }) };
   } catch (error) { await fs.rm(dir, { recursive:true, force:true }); throw error; }
 }
