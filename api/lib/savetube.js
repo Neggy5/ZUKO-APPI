@@ -1,9 +1,8 @@
 'use strict';
 
 /**
- * Save-Tube client (save-tube.com / savetube.vip)
- * random-cdn → POST /v2/info (AES-CBC) → decrypt → POST /download
- * Zero extra deps — uses Node crypto + https
+ * Save-Tube client — always uses /download CDN URLs
+ * (direct googlevideo links 403 from bot/datacenter IPs)
  */
 
 const crypto = require('crypto');
@@ -115,54 +114,39 @@ async function getDownloadUrl(cdn, key, { type = 'audio', quality } = {}) {
   return r.data.data.downloadUrl;
 }
 
+/**
+ * Always resolve via /download so URL is on *.savetube.vip CDN
+ * (googlevideo direct links 403 from bot / cloud IPs)
+ */
 async function resolve(youtubeUrl, type = 'audio', quality) {
   const { cdn, info } = await getInfo(youtubeUrl);
 
-  if (type === 'video' && Array.isArray(info.video_formats)) {
-    const want = quality ? Number(quality) : null;
-    const withUrl = info.video_formats.filter((f) => f && f.url);
-    const pick =
-      (want && withUrl.find((f) => Number(f.quality) === want || Number(f.height) === want)) ||
-      withUrl.find((f) => f.default_selected) ||
-      withUrl.sort((a, b) => Number(b.quality || b.height || 0) - Number(a.quality || a.height || 0))[0];
-    if (pick?.url) {
+  const preferred =
+    type === 'audio'
+      ? ['128', '320', '256', '192']
+      : [String(quality || '360'), '240', '360', '144', '720', '1080'];
+
+  let lastErr;
+  const tried = new Set();
+  for (const q of preferred) {
+    if (tried.has(q)) continue;
+    tried.add(q);
+    try {
+      const download_url = await getDownloadUrl(cdn, info.key, { type, quality: q });
       return {
-        title: info.title || 'video',
+        title: info.title || (type === 'audio' ? 'audio' : 'video'),
         thumbnail: info.thumbnail || null,
         duration: info.durationLabel || info.duration || null,
-        quality: String(pick.quality || pick.height || quality || ''),
-        format: 'mp4',
-        download_url: pick.url,
-        source: 'savetube-direct',
+        quality: q,
+        format: type === 'audio' ? 'mp3' : 'mp4',
+        download_url,
+        source: 'savetube',
       };
+    } catch (e) {
+      lastErr = e;
     }
   }
-
-  if (type === 'audio' && Array.isArray(info.audio_formats)) {
-    const withUrl = info.audio_formats.filter((f) => f && f.url);
-    if (withUrl[0]?.url) {
-      return {
-        title: info.title || 'audio',
-        thumbnail: info.thumbnail || null,
-        duration: info.durationLabel || info.duration || null,
-        quality: String(withUrl[0].quality || '128'),
-        format: 'mp3',
-        download_url: withUrl[0].url,
-        source: 'savetube-direct',
-      };
-    }
-  }
-
-  const download_url = await getDownloadUrl(cdn, info.key, { type, quality });
-  return {
-    title: info.title || (type === 'audio' ? 'audio' : 'video'),
-    thumbnail: info.thumbnail || null,
-    duration: info.durationLabel || info.duration || null,
-    quality: String(quality || (type === 'audio' ? '128' : '360')),
-    format: type === 'audio' ? 'mp3' : 'mp4',
-    download_url,
-    source: 'savetube',
-  };
+  throw lastErr || new Error('Save-Tube: no download URL for any quality.');
 }
 
 module.exports = { resolve, getInfo, getDownloadUrl, decryptPayload };
