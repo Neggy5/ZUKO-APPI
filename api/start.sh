@@ -1,28 +1,24 @@
 #!/bin/sh
-set -eu
+set -u
 
-POT_LOG=/tmp/bgutil-pot.log
+echo "[startup] ZUKO API boot"
+echo "[startup] node=$(node --version)"
+echo "[startup] port=${PORT:-3000}"
 
-# Start the YouTube PO-token provider in the background.
-node /opt/bgutil-ytdlp-pot-provider/server/build/main.js \
-  --host 127.0.0.1 \
-  --port 4416 >"$POT_LOG" 2>&1 &
+# The Save-Tube downloader is the primary YouTube path. Start bgutil in the
+# background for yt-dlp fallback support, but never prevent the API itself
+# from starting if the helper has a transient startup problem.
+node /opt/bgutil-ytdlp-pot-provider/server/build/main.js   --host 127.0.0.1 --port 4416 > /tmp/bgutil.log 2>&1 &
 POT_PID=$!
+echo "[startup] bgutil pid=$POT_PID"
 
-cleanup() {
-  kill "$POT_PID" 2>/dev/null || true
-  wait "$POT_PID" 2>/dev/null || true
-}
-trap cleanup INT TERM EXIT
+sleep 1
+if kill -0 "$POT_PID" 2>/dev/null; then
+  echo "[startup] bgutil started"
+else
+  echo "[startup] bgutil did not stay running; continuing with API"
+  cat /tmp/bgutil.log 2>/dev/null || true
+fi
 
-# Give the local provider a short head start, without blocking API startup.
-i=0
-while [ "$i" -lt 20 ]; do
-  if kill -0 "$POT_PID" 2>/dev/null; then
-    break
-  fi
-  i=$((i + 1))
-  sleep 0.1
-done
-
+echo "[startup] starting server.js"
 exec node server.js

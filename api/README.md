@@ -90,3 +90,13 @@ Optional:
 The registration flow creates the account, sends a single-use verification link, and does not create a login session until the email is verified. Unverified users can request a fresh link from the console.
 
 For production sending, verify your own domain in Resend and set `RESEND_FROM_EMAIL`.
+
+## YouTube Resolver
+
+`GET /v1/youtube?url=<youtube-url>&type=video&quality=1080`
+
+or MP3:
+
+`GET /v1/youtube?url=<youtube-url>&type=mp3&quality=128`
+
+This endpoint uses the publicly exposed YouTubeToolkit analyze/resolve flow and returns its temporary download URL. It does not bypass CAPTCHA, Cloudflare, authentication, or other access controls.

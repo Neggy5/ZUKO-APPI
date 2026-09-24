@@ -18,12 +18,7 @@ RUN apt-get update \
 
 COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund
-
 COPY . ./
-
-# Explicitly ensure the Save-Tube helper library is present in the runtime image.
-COPY lib ./lib
-
 ENV NODE_ENV=production
 ENV YTDLP_BIN=/usr/local/bin/yt-dlp
 ENV YTDLP_MAX_FILE_BYTES=104857600
@@ -32,6 +27,8 @@ ENV YTDLP_IMPERSONATE=Chrome-131:Android-14
 ENV YTDLP_JS_RUNTIMES=node
 ENV YTDLP_POT_URL=http://127.0.0.1:4416
 ENV YTDLP_YOUTUBE_CLIENTS=mweb
-
+ENV SAVETUBE_FALLBACK_YTDLP=1
 EXPOSE 3000
-CMD ["sh", "-c", "node /opt/bgutil-ytdlp-pot-provider/server/build/main.js --host 127.0.0.1 --port 4416 & exec node server.js"]
+COPY start.sh ./start.sh
+RUN chmod +x ./start.sh
+CMD ["sh", "./start.sh"]

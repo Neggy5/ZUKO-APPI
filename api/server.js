@@ -343,7 +343,7 @@ async function main() {
   service: API_NAME,
   version: API_VERSION,
   message: 'ZUKO API is online ⚡',
-  health: '/healthz',
+  health: '/api/ping',
   docs: '/docs',
   api: '/v1',
   endpoints: [
@@ -361,7 +361,7 @@ app.get('/api/', (_req, res) => res.json({
   service: API_NAME,
   version: API_VERSION,
   message: 'ZUKO API is online ⚡',
-  health: '/healthz',
+  health: '/api/ping',
   docs: '/docs',
   api: '/v1',
   endpoints: [
