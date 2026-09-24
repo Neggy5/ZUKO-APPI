@@ -437,7 +437,9 @@ async function main() {
     '/v1/tools/translate',
     '/v1/ai/chat',
     '/v1/ytmp3',
-    '/v1/ytmp4'
+    '/v1/ytmp4',
+    '/v1/download/video',
+    '/v1/download/ytmp4'
   ]
 }));
 
@@ -455,7 +457,9 @@ app.get('/api/', (_req, res) => res.json({
     '/v1/tools/translate',
     '/v1/ai/chat',
     '/v1/ytmp3',
-    '/v1/ytmp4'
+    '/v1/ytmp4',
+    '/v1/download/video',
+    '/v1/download/ytmp4'
   ]
 }));
 
