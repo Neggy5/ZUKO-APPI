@@ -423,6 +423,17 @@ async function main() {
   });
   app.locals.endpointDefinitions = endpointDefinitions;
 
+  app.get('/', (_req, res) => res.json({
+    status: true,
+    service: API_NAME,
+    version: API_VERSION,
+    message: 'ZUKO API is online ⚡',
+    health: '/api/ping',
+    docs: '/docs',
+    admin: '/admin',
+    api: '/v1'
+  }));
+
   app.get('/api', (_req, res) => res.json({
   status: true,
   service: API_NAME,
@@ -584,8 +595,9 @@ res.status(201).json({
 
   app.post('/admin/api/login', (req, res) => {
     const supplied = Buffer.from(String(req.body?.password || '')); const expected = Buffer.from(ADMIN_PASSWORD); if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return res.status(401).json({ status: false, error: 'Invalid credentials.' });
-    res.setHeader('Set-Cookie', `zuko_admin=${encodeURIComponent(makeAdminToken())}; HttpOnly; SameSite=Strict; ${process.env.NODE_ENV === 'production' ? 'Secure; ' : ''}Max-Age=43200; Path=/`);
-    res.json({ status: true });
+    const token = makeAdminToken();
+    res.setHeader('Set-Cookie', `zuko_admin=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; ${process.env.NODE_ENV === 'production' ? 'Secure; ' : ''}Max-Age=43200; Path=/`);
+    res.json({ status: true, token });
   });
 
   function adminOnly(req, res, next) {
