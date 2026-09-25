@@ -594,6 +594,20 @@ app.get('/api/', (_req, res) => res.json({
   app.post('/auth/logout', async (req,res,next)=>{ try{ const raw=req.cookies?.zuko_session; if(raw) await pool.query('DELETE FROM user_sessions WHERE token_hash=$1',[sha256(raw)]); res.setHeader('Set-Cookie','zuko_session=; HttpOnly; SameSite=Lax; Max-Age=0; Path=/'); res.json({status:true}); }catch(e){next(e);} });
   app.get('/api/ping', (_req,res)=>res.json({status:true,message:'ZUKO API is alive ⚡',time:nowIso()}));
   app.get(`${API_PREFIX}/tools/ping`, (req,res)=>sendResult(res,req,Date.now(),200,{status:true,message:'pong',service:API_NAME,time:nowIso(),plan:req.apiKey.plan}));
+  // Dashboard endpoint catalog: the dashboard UI requests this path.
+  // Return the same live mounted endpoint definitions used by /api/endpoints,
+  // rather than the admin-only endpoint configuration table.
+  app.get('/dashboard/api/endpoints', userOnly, async (_req, res) => {
+    const endpoints = (app.locals.endpointDefinitions || []).map((definition) => ({
+      name: definition.name,
+      method: definition.method,
+      path: definition.path,
+      category: definition.category || 'General',
+      description: definition.description || ''
+    }));
+    res.json({ status: true, count: endpoints.length, endpoints });
+  });
+
   app.get('/dashboard/api/profile', userOnly, async (req,res,next)=>{try{const keys=await pool.query('SELECT id,name,key_prefix,plan,active,created_at,last_used_at FROM api_keys WHERE owner_user_id=$1 ORDER BY id DESC',[req.user.id]);const subscription=await getUserSubscription(req.user.id);res.json({status:true,user:{id:req.user.id,email:req.user.email,name:req.user.name,avatar:req.user.avatar,emailVerified:req.user.email_verified},subscription:subscription?{plan:subscription.plan,status:subscription.status,expiresAt:subscription.expires_at}:null,keys:keys.rows,plans:PLANS,payment:{method:PAYMENT_METHOD,accountNumber:PAYMENT_ACCOUNT_NUMBER,accountName:PAYMENT_ACCOUNT_NAME}});}catch(e){next(e);}});
   app.get('/dashboard/api/payments', userOnly, async (req,res,next)=>{try{const r=await pool.query('SELECT reference,plan,amount,currency,status,note,submitted_at,reviewed_at,rejection_reason FROM payments WHERE user_id=$1 ORDER BY id DESC LIMIT 50',[req.user.id]);res.json({status:true,payments:r.rows});}catch(e){next(e);}});
   app.post('/dashboard/api/payments', userOnly, async (req,res,next)=>{try{const plan=cleanString(req.body?.plan||'',30).toLowerCase();const note=cleanString(req.body?.note||'',500);if(!PLANS[plan]||plan==='free')return res.status(400).json({status:false,error:'Choose a paid plan.'});const ref=paymentReference();const r=await pool.query(
