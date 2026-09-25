@@ -9,18 +9,10 @@ const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
-const dns = require('dns');
-try { dns.setDefaultResultOrder('ipv4first'); } catch (_) {}
 
 const AES_KEY = Buffer.from('C5D58EF67A7584E4A29F6C35BBC4EB12', 'hex');
-const CDN_APIS = [
-  'https://media.savetube.me/api/random-cdn',
-  'https://media.savetube.vip/api/random-cdn',
-];
-const ORIGINS = [
-  'https://ytsave.savetube.me',
-  'https://save-tube.com',
-];
+const CDN_API = 'https://media.savetube.vip/api/random-cdn';
+const ORIGIN = 'https://save-tube.com';
 const TIMEOUT = Number(process.env.SAVETUBE_TIMEOUT_MS || 45000);
 
 function request(method, urlStr, { body, headers } = {}) {
@@ -35,14 +27,12 @@ function request(method, urlStr, { body, headers } = {}) {
         port: u.port || (u.protocol === 'http:' ? 80 : 443),
         path: u.pathname + u.search,
         method,
-        family: 4,
-        lookup: (hostname, options, callback) => dns.lookup(hostname, { ...options, family: 4, all: false }, callback),
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: 'application/json, text/plain, */*',
-          Origin: ORIGINS[0],
-          Referer: ORIGINS[0] + '/',
+          Origin: ORIGIN,
+          Referer: ORIGIN + '/',
           ...(payload
             ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
             : {}),
@@ -84,19 +74,11 @@ function decryptPayload(b64) {
 }
 
 async function pickCdn() {
-  let lastError;
-  for (const api of CDN_APIS) {
-    try {
-      const r = await request('GET', api);
-      if (r.status === 200 && r.data?.cdn) {
-        return String(r.data.cdn).replace(/^https?:\/\//, '');
-      }
-      lastError = new Error(`Save-Tube CDN lookup failed (${r.status}).`);
-    } catch (e) {
-      lastError = e;
-    }
+  const r = await request('GET', CDN_API);
+  if (r.status !== 200 || !r.data?.cdn) {
+    throw new Error(`Save-Tube CDN lookup failed (${r.status}).`);
   }
-  throw lastError || new Error('Save-Tube CDN lookup failed.');
+  return String(r.data.cdn).replace(/^https?:\/\//, '');
 }
 
 async function getInfo(youtubeUrl) {
@@ -116,12 +98,11 @@ async function getInfo(youtubeUrl) {
   return { cdn, info: payload };
 }
 
-async function getDownloadUrl(cdn, key, { id, type = 'audio', quality } = {}) {
+async function getDownloadUrl(cdn, key, { type = 'audio', quality } = {}) {
   const isAudio = type === 'audio';
   const q = String(quality || (isAudio ? '128' : '360'));
   const r = await request('POST', `https://${cdn}/download`, {
     body: {
-      id: id || undefined,
       downloadType: isAudio ? 'audio' : 'video',
       quality: q,
       key,
@@ -151,7 +132,7 @@ async function resolve(youtubeUrl, type = 'audio', quality) {
     if (tried.has(q)) continue;
     tried.add(q);
     try {
-      const download_url = await getDownloadUrl(cdn, info.key, { id: info.id, type, quality: q });
+      const download_url = await getDownloadUrl(cdn, info.key, { type, quality: q });
       return {
         title: info.title || (type === 'audio' ? 'audio' : 'video'),
         thumbnail: info.thumbnail || null,
