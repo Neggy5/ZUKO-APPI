@@ -1,6 +1,6 @@
 'use strict';
 
-const text2video = require('../../lib/text2video');
+const text2video = require('../lib/text2video');
 
 module.exports = {
   name: 'Text to Video (LTX free)',
