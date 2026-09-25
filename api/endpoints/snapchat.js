@@ -1,6 +1,6 @@
 'use strict';
 
-const storygrab = require('../../lib/storygrab');
+const storygrab = require('../lib/storygrab');
 
 module.exports = {
   name: 'Snapchat Downloader (StoryGrab)',
