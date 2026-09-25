@@ -91,10 +91,6 @@ function mountEndpoints(app, ctx) {
 
     definition.method = String(definition.method || 'GET').toUpperCase();
     const key = `${definition.method} ${definition.path}`;
-
-    // Do not bring the entire API down because a stale/duplicate endpoint
-    // file exists in the deployment context. Keep the first discovered
-    // implementation and skip later duplicates.
     if (seen.has(key)) {
       console.warn(`[endpoint-loader] Skipping duplicate endpoint ${key} from ${path.relative(__dirname, file)}`);
       continue;

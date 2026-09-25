@@ -423,16 +423,47 @@ async function main() {
   });
   app.locals.endpointDefinitions = endpointDefinitions;
 
-  app.get('/', (_req, res) => res.json({
-    status: true,
-    service: API_NAME,
-    version: API_VERSION,
-    message: 'ZUKO API is online ⚡',
-    health: '/api/ping',
-    docs: '/docs',
-    admin: '/admin',
-    api: '/v1'
-  }));
+  // Public endpoint catalog. The root page is intentionally a quick-access
+  // directory rather than a bare health response so developers can discover
+  // every mounted endpoint and its basic usage without admin authentication.
+  app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'catalog.html')));
+
+  app.get('/api/endpoints', (_req, res) => {
+    const endpoints = (app.locals.endpointDefinitions || []).map((definition) => {
+      const sourcePath = definition.source ? path.join(__dirname, definition.source) : null;
+      let source = '';
+      try { if (sourcePath) source = require('fs').readFileSync(sourcePath, 'utf8'); } catch (_) {}
+
+      const query = [...new Set([
+        ...(source.matchAll(/\bquery\.(\w+)/g) || [])
+      ].map(m => m[1]))];
+      const body = [...new Set([
+        ...(source.matchAll(/\bbody\.(\w+)/g) || [])
+      ].map(m => m[1]))];
+      const params = [...new Set([
+        ...(String(definition.path).matchAll(/:([A-Za-z0-9_]+)/g) || [])
+      ].map(m => m[1]))];
+
+      const sampleValue = (key) => {
+        const k = String(key).toLowerCase();
+        if (k === 'url' || k.endsWith('url')) return 'https://example.com/video';
+        if (k === 'q' || k === 'query' || k === 'search') return 'hello';
+        if (k === 'prompt' || k === 'message' || k === 'text') return 'Hello world';
+        if (k === 'quality' || k === 'q') return '360';
+        if (k.includes('id')) return '123';
+        if (k === 'type' || k === 'format' || k === 'mode') return 'video';
+        return 'VALUE';
+      };
+
+      const usage = definition.method === 'GET'
+        ? `${definition.method} ${definition.path}${query.length ? '?' + query.slice(0, 4).map(k => `${k}=${encodeURIComponent(sampleValue(k))}`).join('&') : ''}`
+        : `${definition.method} ${definition.path}${body.length ? ' with JSON: ' + JSON.stringify(Object.fromEntries(body.slice(0, 6).map(k => [k, sampleValue(k)]))) : ''}`;
+
+      return { ...definition, query, body, params, usage, auth: 'Authorization: Bearer YOUR_API_KEY' };
+    });
+
+    res.json({ status: true, service: API_NAME, version: API_VERSION, count: endpoints.length, endpoints });
+  });
 
   app.get('/api', (_req, res) => res.json({
   status: true,
