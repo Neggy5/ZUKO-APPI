@@ -426,7 +426,22 @@ async function main() {
   // Public endpoint catalog. The root page is intentionally a quick-access
   // directory rather than a bare health response so developers can discover
   // every mounted endpoint and its basic usage without admin authentication.
-  app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'catalog.html')));
+  app.get('/', (_req, res, next) => {
+    // Serve the catalog file when it exists. Some Railway build layouts place
+    // server.js at /app while static files may be copied under /app/api/public,
+    // so try both locations before falling back to an inline catalog page.
+    const candidates = [
+      path.join(__dirname, 'public', 'catalog.html'),
+      path.join(__dirname, 'api', 'public', 'catalog.html')
+    ];
+    const fs = require('fs');
+    const found = candidates.find(file => fs.existsSync(file));
+    if (found) return res.sendFile(found);
+
+    // Keep the root endpoint usable even if a static asset is omitted from a
+    // deployment. The page reads the same live /api/endpoints catalog.
+    res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${API_NAME} — Endpoint Catalog</title><style>body{margin:0;background:#070a12;color:#eef4ff;font:15px system-ui,sans-serif}.wrap{max-width:1200px;margin:auto;padding:28px 18px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}.search,select{background:#0d1220;border:1px solid #26344b;border-radius:10px;color:#fff;padding:12px}.search{flex:1;min-width:230px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}.card{background:#0d1220;border:1px solid #1c2638;border-radius:14px;padding:16px}.method{display:inline-block;padding:5px 8px;border-radius:7px;background:#12392f;color:#6ee7c4;font-weight:800;font-size:11px}.route{font-weight:800;font-size:17px;word-break:break-all;margin-top:8px}.muted{color:#8d9ab1;line-height:1.5}.code{background:#050811;border:1px solid #1c2638;border-radius:9px;padding:10px;overflow:auto;white-space:pre-wrap;word-break:break-word}.copy{background:#151d2d;border:1px solid #26344b;color:#fff;border-radius:7px;padding:6px 9px;cursor:pointer}.head{display:flex;justify-content:space-between;gap:15px;align-items:center}</style></head><body><main class="wrap"><div class="head"><div><div class="muted">${API_NAME} · Developer endpoint catalog</div><h1>Every endpoint. One place.</h1></div><a href="/docs" style="color:#fff">Docs</a></div><p class="muted">Browse every live endpoint, its description and a ready-to-copy request example.</p><div class="toolbar"><input id="q" class="search" placeholder="Search endpoint, path, category..."><select id="cat"><option value="">All categories</option></select><span id="count" class="muted"></span></div><div id="grid" class="grid"><div class="muted">Loading...</div></div></main><script>const g=document.getElementById('grid'),q=document.getElementById('q'),cat=document.getElementById('cat'),count=document.getElementById('count');let data=[];const esc=s=>String(s??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));const cp=(t,b)=>navigator.clipboard?.writeText(t).then(()=>{b.textContent='Copied';setTimeout(()=>b.textContent='Copy',900)});function render(){const x=q.value.toLowerCase(),c=cat.value;const a=data.filter(e=>(!x||[e.name,e.path,e.category,e.description,e.method].join(' ').toLowerCase().includes(x))&&(!c||e.category===c));count.textContent=a.length+' of '+data.length+' endpoints';g.innerHTML=a.map(e=>{const u=e.usage||e.method+' '+e.path;return '<article class="card"><span class="method">'+esc(e.method)+'</span><div class="route">'+esc(e.path)+'</div><p class="muted">'+esc(e.description||'No description')+'</p><div class="muted">Category: '+esc(e.category||'General')+'</div><p><b>Usage</b></p><div class="code">'+esc(u)+' <button class="copy" onclick="cp('+JSON.stringify(u)+',this)">Copy</button></div></article>'}).join('')||'<div class="muted">No matching endpoints.</div>}fetch('/api/endpoints').then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()}).then(x=>{data=x.endpoints||[];[...new Set(data.map(e=>e.category||'General'))].sort().forEach(c=>cat.insertAdjacentHTML('beforeend','<option>'+esc(c)+'</option>'));render()}).catch(e=>{g.innerHTML='<div class="muted">Unable to load endpoint catalog: '+esc(e.message)+'</div>'});q.oninput=render;cat.onchange=render;</script></body></html>`);
+  });
 
   app.get('/api/endpoints', (_req, res) => {
     const endpoints = (app.locals.endpointDefinitions || []).map((definition) => {
