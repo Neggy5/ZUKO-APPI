@@ -30,9 +30,22 @@ function pipeUrl(urlStr, res, headers = {}) {
           reject(new Error(`Upstream HTTP ${upstream.statusCode}`));
           return;
         }
-        res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg');
-        if (upstream.headers['content-length']) {
-          res.setHeader('Content-Length', upstream.headers['content-length']);
+        // Headers may already be locked in (e.g. the caller flushed early, or a
+        // previous attempt already streamed something). Never let a raw header
+        // write escape as an uncaught exception here - this runs inside a plain
+        // http callback, outside the try/catch around the caller's await, so a
+        // thrown error here crashes the whole process instead of just this request.
+        if (!res.headersSent) {
+          try {
+            res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg');
+            if (upstream.headers['content-length']) {
+              res.setHeader('Content-Length', upstream.headers['content-length']);
+            }
+          } catch (headerErr) {
+            upstream.resume();
+            reject(headerErr);
+            return;
+          }
         }
         upstream.pipe(res);
         upstream.on('end', resolve);
@@ -69,7 +82,12 @@ module.exports = {
           `attachment; filename="${(result.title || 'audio').replace(/[^\w. -]/g, '_').slice(0, 80)}.mp3"`
         );
         res.setHeader('X-ZUKO-Source', result.source || 'savetube');
-        res.flushHeaders();
+        // Don't flushHeaders() here - pipeUrl still needs to add Content-Type/
+        // Content-Length once the upstream response arrives. Calling
+        // flushHeaders() before that locks the headers in, so pipeUrl's later
+        // setHeader() throws ERR_HTTP_HEADERS_SENT (this was the crash).
+        // .pipe(res) below sends whatever headers are set by then automatically
+        // on its first write - no explicit flush needed.
         await pipeUrl(result.download_url, res);
         return null;
       }
@@ -94,6 +112,15 @@ module.exports = {
           const { download } = require('../lib/ytdlp');
           const job = await download(url, 'audio');
           if (wantStream && res) {
+            if (res.headersSent) {
+              // Primary path (pipeUrl) already sent headers and then failed
+              // mid-stream - the response is already committed, we can't
+              // switch to the fallback body now. Clean up and bail quietly
+              // instead of throwing on a duplicate setHeader.
+              await job.cleanup();
+              if (!res.writableEnded) res.end();
+              return null;
+            }
             res.setHeader('Content-Type', 'audio/mpeg');
             res.setHeader(
               'Content-Disposition',
@@ -103,7 +130,6 @@ module.exports = {
             res.setHeader('X-ZUKO-Source', 'ytdlp');
             res.on('finish', job.cleanup);
             res.on('close', job.cleanup);
-            res.flushHeaders();
             require('fs').createReadStream(job.filepath).pipe(res);
             return null;
           }
